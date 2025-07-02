@@ -118,12 +118,18 @@
                                 </div>
                             {% else %}
                                 <!-- Video is paid and not unlocked by current user (or user is anonymous) -->
-                                <div class="unlock-section">
+                                <div class="unlock-section" id="unlock-section-{{ video.id }}">
                                     <p><strong>Price:</strong> ${{ "%.2f"|format(video.price) }}</p>
-                                    <button class="unlock-button" data-video-id="{{ video.id }}" data-price="{{ video.price }}">
+                                    <button class="unlock-button" data-video-id="{{ video.id }}" data-price="{{ "%.2f"|format(video.price) }}">
                                         Unlock for ${{ "%.2f"|format(video.price) }}
                                     </button>
-                                    <p style="font-size: 0.8em; color: #777;">(Payment functionality coming soon!)</p>
+
+                                    <!-- Stripe Payment Element Container and Pay Button (initially hidden) -->
+                                    <div id="payment-element-container-{{ video.id }}" class="payment-element-container" style="display: none; margin-top: 15px;">
+                                        <!-- Payment Element will be inserted here by Stripe.js -->
+                                    </div>
+                                    <button id="submit-payment-button-{{ video.id }}" class="submit-payment-button" style="display: none; margin-top: 10px;">Pay Now</button>
+                                    <div id="payment-message-{{ video.id }}" class="payment-message" style="margin-top: 10px; color: red;"></div>
                                 </div>
                             {% endif %}
                         {% else %}
@@ -147,15 +153,18 @@
     <script>
         // Make user payment source info available to JS
         // Using a less common variable name to avoid potential global conflicts.
-        var MAVERICKSTREAM_USER_HAS_PAYMENT_SOURCE = {{ 'true' if current_user.stripe_payment_source_id else 'false' }};
-        var MAVERICKSTREAM_USER_STRIPE_SOURCE_ID = "{{ current_user.stripe_payment_source_id or '' }}";
+        var MAVERICKSTREAM_USER_HAS_PAYMENT_SOURCE = {{ 'true' if current_user.is_authenticated and current_user.stripe_payment_source_id else 'false' }};
+        var MAVERICKSTREAM_USER_STRIPE_SOURCE_ID = "{{ current_user.stripe_payment_source_id if current_user.is_authenticated else '' }}";
+        var MAVERICKSTREAM_STRIPE_PUBLISHABLE_KEY = "{{ stripe_publishable_key or '' }}";
     </script>
     {% else %}
     <script>
         var MAVERICKSTREAM_USER_HAS_PAYMENT_SOURCE = false;
         var MAVERICKSTREAM_USER_STRIPE_SOURCE_ID = "";
+        var MAVERICKSTREAM_STRIPE_PUBLISHABLE_KEY = "{{ stripe_publishable_key or '' }}"; // Also use passed variable here
     </script>
     {% endif %}
+    <script src="https://js.stripe.com/v3/"></script> <!-- Stripe.js SDK -->
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>

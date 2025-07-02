@@ -1,6 +1,6 @@
 import stripe
 import json # Added for json.loads
-from flask import Blueprint, jsonify, current_app, request
+from flask import Blueprint, jsonify, current_app, request, flash, redirect, url_for # Added
 from flask_login import login_required, current_user
 from .models import Video, UserVideoUnlock, User
 from . import db
@@ -167,6 +167,61 @@ def set_payment_method():
         current_app.logger.error(f"Error in set_payment_method: {str(e)}")
         db.session.rollback() # Rollback in case of db error during user update
         return jsonify(error=str(e)), 500
+
+@payments_bp.route('/payment-complete', methods=['GET'])
+@login_required # User should be logged in to see status of their payment
+def payment_complete():
+    payment_intent_client_secret = request.args.get('payment_intent_client_secret')
+    payment_intent_id = request.args.get('payment_intent') # Stripe usually sends 'payment_intent'
+    redirect_status = request.args.get('redirect_status')
+    video_id = request.args.get('video_id') # Passed in our return_url
+
+    # Prefer payment_intent_id if available, otherwise parse from client_secret if needed
+    # Though Stripe usually provides payment_intent_id directly in return_url
+    if not payment_intent_id and payment_intent_client_secret:
+        payment_intent_id = payment_intent_client_secret.split('_secret_')[0]
+
+    if not payment_intent_id:
+        flash("Could not verify payment status: Payment Intent ID missing.", "error")
+        return redirect(url_for('frontend.home'))
+
+    try:
+        stripe.api_key = current_app.config['STRIPE_API_KEY']
+        payment_intent = stripe.PaymentIntent.retrieve(payment_intent_id)
+
+        if redirect_status == 'succeeded' or payment_intent.status == 'succeeded':
+            # The webhook should handle the actual unlock. Here we just confirm to the user.
+            flash("Payment successful! Your video should be unlocked.", "success")
+            # Check if unlock record exists (it might take a moment for webhook)
+            unlock = UserVideoUnlock.query.filter_by(
+                user_id=current_user.id,
+                video_id=video_id,
+                stripe_payment_intent_id=payment_intent.id
+            ).first()
+            if unlock:
+                current_app.logger.info(f"User {current_user.id} successfully paid and confirmed unlock for video {video_id}.")
+            else:
+                current_app.logger.warning(f"Payment for video {video_id} by user {current_user.id} succeeded (PI: {payment_intent.id}), but unlock record not yet found via webhook. It might be delayed.")
+                flash("Your payment is processing and the video will be unlocked shortly.", "info")
+
+        elif redirect_status == 'processing' or payment_intent.status == 'processing':
+            flash("Your payment is processing. We'll update you soon.", "info")
+        elif redirect_status == 'requires_payment_method' or payment_intent.status == 'requires_payment_method':
+            flash("Payment failed. Please try another payment method.", "error")
+        else:
+            flash(f"Payment status: {payment_intent.status}. Please contact support if issues persist.", "warning")
+
+    except stripe.error.StripeError as e:
+        current_app.logger.error(f"Stripe API error on payment completion: {str(e)}")
+        flash(f"Error verifying payment: {str(e)}", "error")
+    except Exception as e:
+        current_app.logger.error(f"Generic error on payment completion: {str(e)}")
+        flash("An unexpected error occurred while verifying your payment.", "error")
+
+    if video_id:
+        return redirect(url_for('frontend.home')) # Or redirect to the specific video page if you have one: url_for('videos.view_video', video_id=video_id)
+    return redirect(url_for('frontend.home'))
+
 
 @payments_bp.route('/stripe-webhook', methods=['POST'])
 def stripe_webhook():

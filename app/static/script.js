@@ -224,41 +224,65 @@ async function sendPlaidPublicToken(publicToken, metadata, statusDiv) {
 document.addEventListener('DOMContentLoaded', () => {
     // ... (existing listeners like videoForm, Plaid addBankAccountButton)
 
+    // Stripe related variables (assuming STRIPE_PUBLISHABLE_KEY is available globally or via config)
+    // This should be set from the server, e.g. in a script tag in the template.
+    // For now, hardcoding a placeholder. Replace with actual loading from config.
+    let stripe;
+    try {
+        // Try to get key from a global var set by template if available
+        // This is a placeholder; in a real app, pass this from server-side config securely.
+        const stripePublishableKey = typeof MAVERICKSTREAM_STRIPE_PUBLISHABLE_KEY !== 'undefined' ? MAVERICKSTREAM_STRIPE_PUBLISHABLE_KEY : "pk_test_YOUR_STRIPE_PUBLISHABLE_KEY_PLACEHOLDER";
+        if (stripePublishableKey && stripePublishableKey.startsWith("pk_test_")) {
+            stripe = Stripe(stripePublishableKey);
+        } else {
+            console.warn("Stripe publishable key not found or invalid. Payment Element will not initialize.");
+        }
+    } catch (e) {
+        console.error("Failed to initialize Stripe:", e);
+    }
+
+
     // Handler for "Unlock Video" buttons
     const unlockVideoButtons = document.querySelectorAll('.unlock-button');
     unlockVideoButtons.forEach(button => {
         button.addEventListener('click', async (event) => {
+            event.preventDefault();
             const videoId = event.target.dataset.videoId;
-            const videoPrice = event.target.dataset.price; // For display or confirmation
+            const videoPrice = event.target.dataset.price;
 
-            // Create a status div next to the button or in a predefined place
-            let statusDiv = document.getElementById(`unlock-status-${videoId}`);
-            if (!statusDiv) {
-                statusDiv = document.createElement('div');
-                statusDiv.id = `unlock-status-${videoId}`;
-                statusDiv.style.marginTop = '10px';
-                event.target.parentNode.appendChild(statusDiv);
+            const paymentElementContainer = document.getElementById(`payment-element-container-${videoId}`);
+            const submitPaymentButton = document.getElementById(`submit-payment-button-${videoId}`);
+            const paymentMessageDiv = document.getElementById(`payment-message-${videoId}`);
+
+            if (!paymentElementContainer || !submitPaymentButton || !paymentMessageDiv) {
+                console.error("Payment UI elements not found for video:", videoId);
+                return;
             }
-            statusDiv.className = 'message';
-            statusDiv.textContent = 'Processing unlock...';
 
-            // Check if user is authenticated (Flask-Login adds current_user to global context, but JS can't see that directly)
-            // We rely on MAVERICKSTREAM_USER_HAS_PAYMENT_SOURCE which implies authentication for true.
+            paymentMessageDiv.textContent = ''; // Clear previous messages
+            paymentMessageDiv.className = 'payment-message';
+
+
+            // Check if user is authenticated and has a payment source (from global JS vars set by template)
             if (typeof MAVERICKSTREAM_USER_HAS_PAYMENT_SOURCE === 'undefined') {
-                 statusDiv.textContent = 'Login required to unlock videos. Please log in.';
-                 statusDiv.className = 'message error';
-                 // Optionally redirect to login: window.location.href = '/auth/login';
+                 paymentMessageDiv.textContent = 'Please log in to unlock videos.';
+                 paymentMessageDiv.className = 'payment-message error';
+                 // Consider redirect: window.location.href = '/auth/login?next=' + window.location.pathname;
                  return;
             }
+            // Note: The Plaid flow sets up a source. For direct card/wallet payments via Payment Element,
+            // this specific check might be less relevant if Payment Element handles new card entry.
+            // However, if we want to enforce adding via Plaid first, it's useful.
+            // For now, let's assume Payment Element will handle it.
 
-            if (!MAVERICKSTREAM_USER_HAS_PAYMENT_SOURCE) {
-                statusDiv.textContent = 'No payment method found. Please add a bank account in your profile.';
-                statusDiv.className = 'message error';
-                // Optionally link to profile: event.target.insertAdjacentHTML('afterend', '<p><a href="/profile">Add Payment Method</a></p>');
+            if (!stripe) {
+                paymentMessageDiv.textContent = 'Payment system is currently unavailable. Stripe key missing.';
+                paymentMessageDiv.className = 'payment-message error';
                 return;
             }
 
             try {
+                paymentMessageDiv.textContent = 'Initializing payment...';
                 // 1. Create Payment Intent
                 const piResponse = await fetch(`/payments/video/${videoId}/create-payment-intent`, {
                     method: 'POST',
@@ -267,33 +291,64 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (!piResponse.ok) {
                     const errorResult = await piResponse.json();
-                    throw new Error(errorResult.error || `Failed to create payment intent: ${piResponse.statusText}`);
+                    throw new Error(errorResult.error || `Payment setup failed: ${piResponse.statusText}`);
                 }
                 const piResult = await piResponse.json();
                 const clientSecret = piResult.client_secret;
 
                 if (!clientSecret) {
-                    throw new Error('Client secret not received for payment intent.');
+                    throw new Error('Failed to initialize payment (no client secret).');
                 }
-                statusDiv.textContent = 'Payment intent created. Confirming payment... (Mocked)';
 
-                // 2. Mock Stripe Payment Confirmation (actual Stripe.js would be here)
-                // For now, we'll just simulate a successful confirmation.
-                // In a real app, you would use stripe.confirmCardPayment or similar.
-                // The actual unlock happens via webhook after Stripe processes the payment.
+                // 2. Initialize Stripe Elements and mount Payment Element
+                const appearance = { theme: 'stripe' /* or 'night', 'flat', etc. */ };
+                const elements = stripe.elements({ appearance, clientSecret });
+                const paymentElement = elements.create('payment');
+                paymentElement.mount(`#payment-element-container-${videoId}`);
 
-                // Simulate a delay and success for mock
-                await new Promise(resolve => setTimeout(resolve, 1500));
+                paymentElementContainer.style.display = 'block';
+                submitPaymentButton.style.display = 'block';
+                event.target.style.display = 'none'; // Hide the original "Unlock for $X.XX" button
+                paymentMessageDiv.textContent = ''; // Clear "Initializing" message
 
-                statusDiv.textContent = `Mock payment confirmed for video ${videoId} (Price: $${videoPrice}). Video will be unlocked shortly after server processing. Please refresh if needed.`;
-                statusDiv.className = 'message success';
-                // Hide the button after successful "mock" attempt to prevent re-clicks before webhook potentially updates UI
-                event.target.style.display = 'none';
+                // 3. Handle "Pay Now" button click
+                submitPaymentButton.onclick = async () => { // Use onclick to replace previous if any
+                    paymentMessageDiv.textContent = 'Processing payment...';
+                    submitPaymentButton.disabled = true;
+
+                    const { error } = await stripe.confirmPayment({
+                        elements,
+                        confirmParams: {
+                            // Make sure to change this to your payment completion page
+                            return_url: `${window.location.origin}/payments/payment-complete?video_id=${videoId}&payment_intent_client_secret=${clientSecret}`,
+                        },
+                    });
+
+                    // This point will only be reached if there is an immediate error when
+                    // confirming the payment. Otherwise, your customer will be redirected to
+                    // your `return_url`. For example, some payment methods require a redirect.
+                    if (error) {
+                        if (error.type === "card_error" || error.type === "validation_error") {
+                            paymentMessageDiv.textContent = error.message;
+                        } else {
+                            paymentMessageDiv.textContent = "An unexpected error occurred.";
+                        }
+                        paymentMessageDiv.className = 'payment-message error';
+                        submitPaymentButton.disabled = false;
+                    } else {
+                        // Should not be reached if return_url is effective
+                        paymentMessageDiv.textContent = "Payment submitted. Waiting for confirmation...";
+                        paymentMessageDiv.className = 'payment-message success';
+                    }
+                };
 
             } catch (error) {
-                console.error(`Error unlocking video ${videoId}:`, error);
-                statusDiv.textContent = `Error: ${error.message}`;
-                statusDiv.className = 'message error';
+                console.error(`Error initializing payment for video ${videoId}:`, error);
+                paymentMessageDiv.textContent = `Error: ${error.message}`;
+                paymentMessageDiv.className = 'payment-message error';
+                if (submitPaymentButton) submitPaymentButton.style.display = 'none';
+                if (paymentElementContainer) paymentElementContainer.style.display = 'none';
+                event.target.style.display = 'block'; // Show original unlock button again
             }
         });
     });

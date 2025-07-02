@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request
+from flask import Blueprint, render_template, request, current_app # Added current_app import
 from flask_login import login_required, current_user # Added current_user
 from app.models import Video, UserVideoUnlock # Import Video model and UserVideoUnlock
 from app import db # Import db instance if needed for complex queries, not for simple filter_by
@@ -12,7 +12,8 @@ def home():
     if current_user.is_authenticated:
         unlocks = UserVideoUnlock.query.filter_by(user_id=current_user.id).all()
         unlocked_video_ids = {unlock.video_id for unlock in unlocks}
-    return render_template('public_gallery.html', videos=public_videos, title="Welcome - Public Video Gallery", unlocked_video_ids=unlocked_video_ids)
+    stripe_pk = current_app.config.get('STRIPE_PUBLISHABLE_KEY', '')
+    return render_template('public_gallery.html', videos=public_videos, title="Welcome - Public Video Gallery", unlocked_video_ids=unlocked_video_ids, stripe_publishable_key=stripe_pk)
 
 @frontend_bp.route('/upload') # New route for the upload page
 @login_required
@@ -43,7 +44,8 @@ def public_gallery():
     if current_user.is_authenticated:
         unlocks = UserVideoUnlock.query.filter_by(user_id=current_user.id).all()
         unlocked_video_ids = {unlock.video_id for unlock in unlocks}
-    return render_template('public_gallery.html', videos=public_videos, title="Public Video Gallery", unlocked_video_ids=unlocked_video_ids)
+    stripe_pk = current_app.config.get('STRIPE_PUBLISHABLE_KEY', '')
+    return render_template('public_gallery.html', videos=public_videos, title="Public Video Gallery", unlocked_video_ids=unlocked_video_ids, stripe_publishable_key=stripe_pk)
 
 @frontend_bp.route('/profile')
 @login_required

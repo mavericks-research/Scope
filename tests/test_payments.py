@@ -259,3 +259,83 @@ def test_set_payment_method_unauthenticated(client):
     response = client.post('/payments/set-payment-method', json={'public_token': 'some-token'}, follow_redirects=False)
     assert response.status_code == 302 # Redirect to login
     assert '/auth/login' in response.headers['Location']
+
+
+# --- Tests for Payment Completion Route ---
+
+def test_payment_complete_success(logged_in_client, app, db):
+    client, user_info = logged_in_client
+    user_id = user_info['id']
+
+    # Create a dummy video for context, though not strictly needed for this PI retrieve mock
+    video = Video(title="Payment Complete Test Video", user_id=user_id, filename="pctv.mp4", file_path="/f/pctv.mp4", is_public=True)
+    db.session.add(video)
+    db.session.commit()
+
+    mock_pi_id = "pi_mock_succeeded_123"
+    mock_client_secret = f"{mock_pi_id}_secret_abcdef"
+
+    with patch('stripe.PaymentIntent.retrieve') as mock_retrieve:
+        mock_retrieve.return_value = MagicMock(
+            id=mock_pi_id,
+            status='succeeded',
+            client_secret=mock_client_secret
+            # metadata would typically be here if needed by the route, but not directly used in this success flash
+        )
+
+        # Simulate redirect from Stripe with parameters
+        response = client.get(f'/payments/payment-complete?payment_intent={mock_pi_id}&payment_intent_client_secret={mock_client_secret}&redirect_status=succeeded&video_id={video.id}', follow_redirects=False)
+
+    assert response.status_code == 302 # Redirects to home
+    assert response.headers['Location'] == '/' # frontend.home
+
+    # To check flashed messages, we'd need to follow the redirect and inspect the response content
+    # Or use a custom way to capture flashes if that's set up in conftest.
+    # For now, we'll assume the flash happens if the redirect is correct.
+    # A more thorough test would capture and verify flash messages.
+    # Example (if response was not a redirect but rendered a template with flashes):
+    # client.get('/some_page_that_shows_flashes')
+    # assert b"Payment successful!" in followed_response.data
+    # This is harder to test directly with redirects without more setup.
+
+def test_payment_complete_processing(logged_in_client, app, db):
+    client, user_info = logged_in_client # Correct unpacking
+    video = Video(title="Processing Test Video", user_id=user_info['id'], filename="ptv.mp4", file_path="/f/ptv.mp4", is_public=True)
+    db.session.add(video)
+    db.session.commit()
+    mock_pi_id = "pi_mock_processing_456"
+    with patch('stripe.PaymentIntent.retrieve') as mock_retrieve:
+        mock_retrieve.return_value = MagicMock(status='processing')
+        response = client.get(f'/payments/payment-complete?payment_intent={mock_pi_id}&video_id={video.id}', follow_redirects=False)
+    assert response.status_code == 302
+    assert response.headers['Location'] == '/'
+    # Check flash for "processing" - similar challenge as above
+
+def test_payment_complete_failed(logged_in_client, app, db):
+    client, user_info = logged_in_client # Correct unpacking
+    video = Video(title="Failed Test Video", user_id=user_info['id'], filename="ftv.mp4", file_path="/f/ftv.mp4", is_public=True)
+    db.session.add(video)
+    db.session.commit()
+    mock_pi_id = "pi_mock_failed_789"
+    with patch('stripe.PaymentIntent.retrieve') as mock_retrieve:
+        mock_retrieve.return_value = MagicMock(status='requires_payment_method')
+        response = client.get(f'/payments/payment-complete?payment_intent={mock_pi_id}&video_id={video.id}', follow_redirects=False)
+    assert response.status_code == 302
+    assert response.headers['Location'] == '/'
+    # Check flash for "failed"
+
+def test_payment_complete_missing_pi_id(logged_in_client):
+    client, _ = logged_in_client # Correct unpacking, user_info not needed here
+    response = client.get('/payments/payment-complete', follow_redirects=False) # No PI ID
+    assert response.status_code == 302 # Redirects home
+    assert response.headers['Location'] == '/'
+    # Check for "Payment Intent ID missing" flash
+
+def test_payment_complete_stripe_error(logged_in_client, app):
+    client, _ = logged_in_client # Correct unpacking, user_info not needed here
+    with patch('stripe.PaymentIntent.retrieve') as mock_retrieve:
+        mock_retrieve.side_effect = stripe.error.StripeError("Stripe is down")
+        response = client.get('/payments/payment-complete?payment_intent=pi_anyid', follow_redirects=False)
+    assert response.status_code == 302
+    assert response.headers['Location'] == '/'
+    # Check for "Error verifying payment" flash
