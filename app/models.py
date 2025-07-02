@@ -43,6 +43,7 @@ class Video(db.Model):
     file_path = db.Column(db.String(512), nullable=False)
     total_size = db.Column(db.BigInteger, nullable=True) # Total size of the video in bytes
     is_processed = db.Column(db.Boolean, default=False) # Flag to indicate if video processing (encoding) is done
+    is_public = db.Column(db.Boolean, nullable=False, default=False) # New field for public/private status
     # Future fields for chunking:
     # upload_id = db.Column(db.String(100), nullable=True, unique=True) # Unique ID for this upload session
     # total_chunks = db.Column(db.Integer, nullable=True)

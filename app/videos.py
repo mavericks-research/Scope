@@ -32,6 +32,11 @@ def upload_video_route(): # Renamed function to avoid conflict if we had an impo
     file = request.files['video'] # Changed 'file' to 'video'
     title = request.form.get('title')
     description = request.form.get('description')
+    is_public_str = request.form.get('is_public') # Get 'is_public' from form
+
+    # Convert is_public_str to boolean: 'true' (from checkbox value) means True, otherwise False.
+    # If checkbox is unchecked, 'is_public' won't be in request.form, so is_public_str will be None.
+    is_public = True if is_public_str == 'true' else False
 
     if not title:
         return jsonify({"msg": "Missing title"}), 400
@@ -67,7 +72,8 @@ def upload_video_route(): # Renamed function to avoid conflict if we had an impo
                 filename=original_filename, # Original filename from upload
                 file_path=file_path, # Path where it's stored
                 total_size=file_size,
-                user_id=user_id
+                user_id=user_id,
+                is_public=is_public # Save the is_public status
             )
             db.session.add(new_video)
             db.session.commit()
