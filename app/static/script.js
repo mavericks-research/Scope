@@ -28,6 +28,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 formData.set('is_public', isPublicCheckbox.checked ? 'true' : 'false');
             }
 
+            // Handle paid unlock fields
+            const isPaidUnlockCheckbox = videoForm.querySelector('input[name="is_paid_unlock"]');
+            const priceInput = videoForm.querySelector('input[name="price"]');
+
+            if (isPaidUnlockCheckbox) {
+                formData.set('is_paid_unlock', isPaidUnlockCheckbox.checked ? 'true' : 'false');
+                if (isPaidUnlockCheckbox.checked && priceInput && priceInput.value) {
+                    formData.set('price', priceInput.value);
+                } else if (isPaidUnlockCheckbox.checked && (!priceInput || !priceInput.value)) {
+                    // This case should ideally be caught by form validation or server-side
+                    // but good to be aware of on client too.
+                    console.warn("Video marked as paid but no price is set.");
+                    // Optionally, prevent submission or show an error here.
+                } else {
+                    // If not paid, ensure price is not sent or is empty
+                    if (formData.has('price')) {
+                        formData.delete('price');
+                    }
+                }
+            }
+
+
             const submitButton = videoForm.querySelector('button[type="submit"]');
             submitButton.disabled = true;
             submitButton.textContent = 'Uploading...';

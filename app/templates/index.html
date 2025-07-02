@@ -70,8 +70,26 @@
             <input type="checkbox" id="is_public" name="is_public" value="true">
             <label for="is_public">Make video public</label>
         </div>
+        <hr> <!-- Visual separator for payment options -->
+        <div>
+            <input type="checkbox" id="is_paid_unlock" name="is_paid_unlock" value="true" onchange="togglePriceInput(this.checked)">
+            <label for="is_paid_unlock">Require payment to unlock this video?</label>
+        </div>
+        <div id="price_input_div" style="display: none;"> <!-- Hidden by default -->
+            <label for="price">Price (USD):</label>
+            <input type="number" id="price" name="price" step="0.01" min="0.50"> <!-- Min price example $0.50 for Stripe -->
+        </div>
         <button type="submit">Upload</button>
     </form>
+
+    <script>
+        function togglePriceInput(isPaid) {
+            document.getElementById('price_input_div').style.display = isPaid ? 'block' : 'none';
+            if (!isPaid) {
+                document.getElementById('price').value = ''; // Clear price if not paid
+            }
+        }
+    </script>
 
     <script>
         // Check if an access_token was passed from the server (e.g., in URL after form login)

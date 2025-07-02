@@ -25,6 +25,19 @@ def create_app():
     app.config['UPLOAD_FOLDER'] = os.path.join(os.getcwd(), 'uploads') # For local file storage
     app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100 MB max upload size (for now)
 
+    # Stripe Mock Configuration
+    app.config['STRIPE_API_KEY'] = os.environ.get('STRIPE_API_KEY', 'sk_test_YOUR_MOCK_STRIPE_KEY')
+    app.config['STRIPE_PUBLISHABLE_KEY'] = os.environ.get('STRIPE_PUBLISHABLE_KEY', 'pk_test_YOUR_MOCK_STRIPE_PUBLISHABLE_KEY')
+    app.config['STRIPE_WEBHOOK_SECRET'] = os.environ.get('STRIPE_WEBHOOK_SECRET', 'whsec_YOUR_MOCK_STRIPE_WEBHOOK_SECRET')
+
+    # Plaid Mock Configuration
+    app.config['PLAID_CLIENT_ID'] = os.environ.get('PLAID_CLIENT_ID', 'MOCK_PLAID_CLIENT_ID')
+    app.config['PLAID_SECRET_KEY'] = os.environ.get('PLAID_SECRET_KEY', 'MOCK_PLAID_SECRET_KEY')
+    app.config['PLAID_ENV'] = os.environ.get('PLAID_ENV', 'sandbox') # e.g., 'sandbox', 'development', 'production'
+    app.config['PLAID_PRODUCTS'] = os.environ.get('PLAID_PRODUCTS', 'auth').split(',') # e.g., ['auth', 'transactions']
+    app.config['PLAID_COUNTRY_CODES'] = os.environ.get('PLAID_COUNTRY_CODES', 'US').split(',') # e.g., ['US', 'CA']
+
+
     # Ensure upload folder exists
     if not os.path.exists(app.config['UPLOAD_FOLDER']):
         os.makedirs(app.config['UPLOAD_FOLDER'])
@@ -52,5 +65,8 @@ def create_app():
 
     from .routes import frontend_bp
     app.register_blueprint(frontend_bp, url_prefix='/')
+
+    from .payments import payments_bp
+    app.register_blueprint(payments_bp, url_prefix='/payments')
 
     return app

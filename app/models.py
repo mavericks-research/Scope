@@ -50,5 +50,27 @@ class Video(db.Model):
     # uploaded_chunks_count = db.Column(db.Integer, default=0)
     # is_complete = db.Column(db.Boolean, default=False) # True when all chunks are uploaded
 
+    # Fields for paid content
+    price = db.Column(db.Numeric(10, 2), nullable=True) # e.g., 19.99
+    is_paid_unlock = db.Column(db.Boolean, nullable=False, default=False)
+
+
     def __repr__(self):
         return f'<Video {self.title}>'
+
+class UserVideoUnlock(db.Model):
+    __tablename__ = 'user_video_unlocks'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    video_id = db.Column(db.Integer, db.ForeignKey('videos.id'), nullable=False)
+    unlocked_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    stripe_payment_intent_id = db.Column(db.String(100), nullable=True, index=True) # Store Stripe Payment Intent ID
+
+    user = db.relationship('User', backref=db.backref('video_unlocks', lazy='dynamic'))
+    video = db.relationship('Video', backref=db.backref('unlock_records', lazy='dynamic'))
+
+    __table_args__ = (db.UniqueConstraint('user_id', 'video_id', name='uq_user_video_unlock'),)
+
+    def __repr__(self):
+        return f'<UserVideoUnlock User {self.user_id} Video {self.video_id}>'

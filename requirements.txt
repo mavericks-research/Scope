@@ -8,3 +8,5 @@ python-dotenv
 pytest
 pytest-flask
 Flask-Login
+stripe
+plaid-python

@@ -83,6 +83,11 @@
                         <p><strong>Filename:</strong> {{ video.filename }}</p>
                         <p><strong>Uploaded:</strong> {{ video.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
                         <p><strong>Status:</strong> {{ "Public" if video.is_public else "Private" }}</p>
+                        {% if video.is_paid_unlock and video.price is not none %}
+                        <p><strong>Set Price:</strong> ${{ "%.2f"|format(video.price) }}</p>
+                        {% elif video.is_paid_unlock %}
+                        <p><strong>Set Price:</strong> (Price not set, video will not be purchasable)</p>
+                        {% endif %}
                         <div>
                             <video width="320" height="240" controls preload="metadata">
                                 <source src="{{ url_for('videos.stream_video', video_id=video.id) }}" type="video/mp4">

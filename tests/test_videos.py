@@ -89,6 +89,88 @@ def test_upload_video_invalid_file_type(auth_data, db):
     assert response.status_code == 400
     assert response.get_json()['msg'] == "File type not allowed"
 
+
+def test_upload_video_with_price_and_paid_flag(auth_data, db):
+    """Test uploading a video and setting it as paid with a price."""
+    client, access_token, _ = auth_data
+    from decimal import Decimal
+    data = {
+        'title': 'Paid Content Video',
+        'description': 'This video costs money.',
+        'video': (io.BytesIO(b"paid content data"), "paid_content.mp4"),
+        'is_public': 'true', # Can be public but paid
+        'is_paid_unlock': 'true',
+        'price': '19.99'
+    }
+    response = client.post('/videos/upload_video', data=data, content_type='multipart/form-data',
+                           headers={"Authorization": f"Bearer {access_token}"})
+    assert response.status_code == 201, f"Response: {response.data.decode()}"
+    video_id = response.get_json()['video_id']
+    video = Video.query.get(video_id)
+    assert video is not None
+    assert video.is_paid_unlock is True
+    assert video.price == Decimal("19.99")
+    # Cleanup
+    if video and os.path.exists(video.file_path): os.remove(video.file_path)
+    if video and not os.listdir(os.path.dirname(video.file_path)): os.rmdir(os.path.dirname(video.file_path))
+
+def test_upload_video_paid_flag_without_price(auth_data, db):
+    """Test uploading a video marked as paid but without providing a price."""
+    client, access_token, _ = auth_data
+    data = {
+        'title': 'Paid No Price Video',
+        'video': (io.BytesIO(b"paid no price data"), "paid_no_price.mp4"),
+        'is_paid_unlock': 'true'
+        # Missing 'price'
+    }
+    response = client.post('/videos/upload_video', data=data, content_type='multipart/form-data',
+                           headers={"Authorization": f"Bearer {access_token}"})
+    assert response.status_code == 400
+    assert response.get_json()['msg'] == "Price is required for paid videos."
+
+def test_upload_video_price_without_paid_flag(auth_data, db):
+    """Test uploading a video with a price but not marked as paid."""
+    client, access_token, _ = auth_data
+    data = {
+        'title': 'Price No Paid Flag Video',
+        'video': (io.BytesIO(b"price no flag data"), "price_no_flag.mp4"),
+        'price': '5.00'
+        # Missing 'is_paid_unlock' or it's false
+    }
+    response = client.post('/videos/upload_video', data=data, content_type='multipart/form-data',
+                           headers={"Authorization": f"Bearer {access_token}"})
+    assert response.status_code == 400
+    assert response.get_json()['msg'] == "Video must be marked as 'require payment' to set a price."
+
+def test_upload_video_invalid_price_format(auth_data, db):
+    """Test uploading a paid video with an invalid price format."""
+    client, access_token, _ = auth_data
+    data = {
+        'title': 'Invalid Price Video',
+        'video': (io.BytesIO(b"invalid price data"), "invalid_price.mp4"),
+        'is_paid_unlock': 'true',
+        'price': 'not_a_number'
+    }
+    response = client.post('/videos/upload_video', data=data, content_type='multipart/form-data',
+                           headers={"Authorization": f"Bearer {access_token}"})
+    assert response.status_code == 400
+    assert response.get_json()['msg'] == "Invalid price format."
+
+def test_upload_video_price_too_low(auth_data, db):
+    """Test uploading a paid video with a price below the minimum."""
+    client, access_token, _ = auth_data
+    data = {
+        'title': 'Low Price Video',
+        'video': (io.BytesIO(b"low price data"), "low_price.mp4"),
+        'is_paid_unlock': 'true',
+        'price': '0.10' # Assuming min is $0.50 as per route logic
+    }
+    response = client.post('/videos/upload_video', data=data, content_type='multipart/form-data',
+                           headers={"Authorization": f"Bearer {access_token}"})
+    assert response.status_code == 400
+    assert response.get_json()['msg'] == "Price must be at least $0.50."
+
+
 def test_upload_video_default_private(auth_data, db):
     """Test that a video is private by default when is_public is not specified."""
     client, access_token, user_info = auth_data
@@ -587,3 +669,74 @@ def test_toggle_video_visibility_unauthenticated(client, db):
     response = client.post('/videos/1/toggle-visibility', follow_redirects=False) # Assuming video ID 1 might exist or not
     assert response.status_code == 302 # Redirect to login
     assert '/auth/login' in response.headers['Location']
+
+# --- Tests for Paid Video Functionality ---
+from decimal import Decimal # Import Decimal
+
+def test_video_model_paid_fields(db, app):
+    """Test that Video model's price and is_paid_unlock fields work."""
+    from decimal import Decimal
+    user = User(username="paiduser", email="paid@example.com", password="password")
+    db.session.add(user)
+    db.session.commit()
+
+    video1 = Video(title="Free Video", filename="free.mp4", file_path="/fake/free.mp4", user_id=user.id)
+    db.session.add(video1)
+    db.session.commit()
+    assert video1.price is None
+    assert video1.is_paid_unlock is False
+
+    video2 = Video(title="Paid Video", filename="paid.mp4", file_path="/fake/paid.mp4", user_id=user.id,
+                   is_paid_unlock=True, price=Decimal("9.99"))
+    db.session.add(video2)
+    db.session.commit()
+    assert video2.price == Decimal("9.99")
+    assert video2.is_paid_unlock is True
+
+def test_user_video_unlock_model(db, app):
+    """Test creation of UserVideoUnlock records."""
+    from app.models import UserVideoUnlock # Import locally if not at top
+    user1 = User(username="unlockuser1", email="unlock1@example.com", password="password")
+    user2 = User(username="unlockuser2", email="unlock2@example.com", password="password")
+    db.session.add_all([user1, user2])
+    db.session.commit()
+
+    video = Video(title="Unlockable Video", filename="unlockable.mp4", file_path="/fake/unlockable.mp4", user_id=user1.id,
+                  is_paid_unlock=True, price=Decimal("5.00"))
+    db.session.add(video)
+    db.session.commit()
+
+    # User1 unlocks the video
+    unlock_record = UserVideoUnlock(user_id=user1.id, video_id=video.id, stripe_payment_intent_id="pi_test123")
+    db.session.add(unlock_record)
+    db.session.commit()
+
+    assert unlock_record.id is not None
+    assert unlock_record.user_id == user1.id
+    assert unlock_record.video_id == video.id
+    assert unlock_record.stripe_payment_intent_id == "pi_test123"
+    assert UserVideoUnlock.query.count() == 1
+
+    retrieved_unlock = UserVideoUnlock.query.filter_by(user_id=user1.id, video_id=video.id).first()
+    assert retrieved_unlock is not None
+    assert retrieved_unlock.user == user1
+    assert retrieved_unlock.video == video
+
+    # Check unique constraint: User1 tries to unlock the same video again (should fail if we try to add another identical record)
+    # This is usually caught at DB level. Application logic should prevent creating duplicates.
+    duplicate_unlock_attempt = UserVideoUnlock(user_id=user1.id, video_id=video.id, stripe_payment_intent_id="pi_test456")
+    db.session.add(duplicate_unlock_attempt)
+    try:
+        db.session.commit()
+        # We shouldn't reach here if the unique constraint is working
+        assert False, "Duplicate UserVideoUnlock record should not be allowed by unique constraint."
+    except Exception as e: # Catch general IntegrityError or specific DB error
+        db.session.rollback()
+        print(f"Caught expected error for duplicate unlock: {e}")
+        assert UserVideoUnlock.query.count() == 1 # Still only one record
+
+    # User2 unlocks the same video - should be fine
+    unlock_record_user2 = UserVideoUnlock(user_id=user2.id, video_id=video.id, stripe_payment_intent_id="pi_test789")
+    db.session.add(unlock_record_user2)
+    db.session.commit()
+    assert UserVideoUnlock.query.count() == 2

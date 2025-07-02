@@ -1,7 +1,9 @@
 import pytest
-from app.models import User, Video # Assuming Video model is in app.models
+from app.models import User, Video, UserVideoUnlock # Assuming Video model is in app.models
 from app import db as _db # To interact with database session if needed for setup
 import io # For creating dummy file data
+from decimal import Decimal # For checking price
+import os # For file cleanup in tests
 
 # Helper function to get flashed messages (if needed, though direct content check is often simpler)
 # def get_flashed_messages(client):
@@ -377,3 +379,168 @@ def test_toggle_visibility_from_my_videos_page(client, db, app):
 
     assert "<p><strong>Status:</strong> Private</p>" in block_final
     assert "Make Public</button>" in block_final
+
+
+# --- Tests for Paid Video Frontend Display ---
+
+def test_public_gallery_shows_unlock_button_for_paid_video_anonymous(client, db, app):
+    """Test anonymous users see unlock button for a paid video in public gallery."""
+    owner = User(username="paid_owner_anon", email="paid_owner_anon@example.com", password="password")
+    db.session.add(owner)
+    db.session.commit()
+    Video.query.delete() # Clear other videos for cleaner test
+    paid_video = Video(title="Paid Video For Anon", user_id=owner.id, filename="pv_anon.mp4", file_path="/f/pv_anon.mp4",
+                       is_public=True, is_paid_unlock=True, price=Decimal("7.50"))
+    db.session.add(paid_video)
+    db.session.commit()
+
+    response = client.get('/') # Root is now public gallery
+    assert response.status_code == 200
+    content = response.data.decode()
+
+    assert "Paid Video For Anon" in content
+    assert 'Unlock for $7.50' in content # Check button text and price
+    assert '<video' not in content # Video player should be hidden
+
+def test_public_gallery_shows_unlock_button_for_paid_video_logged_in_unlocked(client, db, app, auth_data):
+    """Test logged-in (non-owner) user sees unlock button if video not unlocked."""
+    owning_client, _, owner_info = auth_data # This is user1 ('testuser')
+
+    # Create another user who will be the owner of the paid video
+    video_owner = User(username="video_owner_gallery", email="vog@example.com", password="password")
+    db.session.add(video_owner)
+    db.session.commit()
+
+    Video.query.delete() # Clear other videos
+    paid_video = Video(title="Paid Video For LoggedIn", user_id=video_owner.id, filename="pv_lin.mp4", file_path="/f/pv_lin.mp4",
+                       is_public=True, is_paid_unlock=True, price=Decimal("12.00"))
+    db.session.add(paid_video)
+    db.session.commit()
+
+    # Log in as 'testuser' (who does not own or unlocked the video yet)
+    # auth_data already returns a client authenticated via JWT. For session auth on frontend:
+    client.get('/auth/logout', follow_redirects=True) # Clear any previous session
+    login_resp = client.post('/auth/login', data={'identifier': owner_info['username'], 'password': 'password123'}, follow_redirects=True)
+    assert login_resp.status_code == 200
+
+    response = client.get('/')
+    assert response.status_code == 200
+    content = response.data.decode()
+
+    assert "Paid Video For LoggedIn" in content
+    assert 'Unlock for $12.00' in content
+    assert video_owner.username in content # Check uploader info is still there
+    assert '<video' not in content # Video player should be hidden
+
+def test_public_gallery_shows_video_if_paid_and_unlocked(client, db, app, auth_data):
+    """Test logged-in user sees video player if they have unlocked the paid video."""
+    client_viewer, _, viewer_info = auth_data # This is 'testuser'
+
+    video_owner = User(username="video_owner_gallery2", email="vog2@example.com", password="password")
+    db.session.add(video_owner)
+    db.session.commit()
+
+    Video.query.delete()
+    paid_video = Video(title="Unlocked Paid Video", user_id=video_owner.id, filename="pv_unlocked.mp4", file_path="/f/pv_unlocked.mp4",
+                       is_public=True, is_paid_unlock=True, price=Decimal("3.33"))
+    db.session.add(paid_video)
+    db.session.commit()
+
+    # Create an unlock record for 'testuser' (viewer)
+    unlock = UserVideoUnlock(user_id=viewer_info['id'], video_id=paid_video.id, stripe_payment_intent_id="pi_fake_unlock")
+    db.session.add(unlock)
+    db.session.commit()
+
+    # Log in as 'testuser'
+    client.get('/auth/logout', follow_redirects=True)
+    login_resp = client.post('/auth/login', data={'identifier': viewer_info['username'], 'password': 'password123'}, follow_redirects=True)
+    assert login_resp.status_code == 200
+
+    response = client.get('/')
+    assert response.status_code == 200
+    content = response.data.decode()
+
+    assert "Unlocked Paid Video" in content
+    assert 'Unlock for' not in content # Unlock button should be hidden
+    assert '<video' in content # Video player should be visible
+    assert f'src="/videos/stream/{paid_video.id}"' in content
+
+def test_public_gallery_shows_video_if_paid_and_owned(client, db, app, auth_data):
+    """Test logged-in user (owner) sees video player for their own paid video."""
+    client_owner, access_token, owner_info = auth_data # 'testuser' is the owner
+
+    # 'testuser' uploads a paid video
+    # Need JWT for upload, but session for viewing the gallery page as owner
+    Video.query.delete()
+    paid_video_data = {
+        'title': 'My Own Paid Video',
+        'video': (io.BytesIO(b"owner_paid_data"), "owner_paid.mp4"),
+        'is_public': 'true',
+        'is_paid_unlock': 'true',
+        'price': '5.50'
+    }
+    upload_resp = client_owner.post('/videos/upload_video', data=paid_video_data, content_type='multipart/form-data',
+                                   headers={"Authorization": f"Bearer {access_token}"})
+    assert upload_resp.status_code == 201
+    owned_paid_video_id = upload_resp.get_json()['video_id']
+
+    # Log in as owner via form session
+    client_owner.get('/auth/logout', follow_redirects=True)
+    login_resp = client_owner.post('/auth/login', data={'identifier': owner_info['username'], 'password': 'password123'}, follow_redirects=True)
+    assert login_resp.status_code == 200
+
+    response = client_owner.get('/')
+    assert response.status_code == 200
+    content = response.data.decode()
+
+    assert "My Own Paid Video" in content
+    assert 'Unlock for' not in content
+    assert '<video' in content
+    assert f'src="/videos/stream/{owned_paid_video_id}"' in content
+
+    # Clean up the created file
+    video_obj = Video.query.get(owned_paid_video_id)
+    if video_obj and os.path.exists(video_obj.file_path):
+        os.remove(video_obj.file_path)
+        user_upload_folder = os.path.dirname(video_obj.file_path)
+        if os.path.exists(user_upload_folder) and not os.listdir(user_upload_folder):
+            os.rmdir(user_upload_folder)
+
+
+def test_my_videos_page_shows_set_price(client, db, app, auth_data):
+    """Test that 'My Videos' page shows the set price for owned paid videos."""
+    client_owner, access_token, owner_info = auth_data
+
+    # Upload a paid video
+    video_data = {
+        'title': 'My Priced Video',
+        'video': (io.BytesIO(b"my_priced_data"), "my_priced.mp4"),
+        'is_public': 'true',
+        'is_paid_unlock': 'true',
+        'price': '19.99'
+    }
+    upload_resp = client_owner.post('/videos/upload_video', data=video_data, content_type='multipart/form-data',
+                                   headers={"Authorization": f"Bearer {access_token}"})
+    assert upload_resp.status_code == 201
+    video_id = upload_resp.get_json()['video_id']
+
+    # Log in via form session
+    client_owner.get('/auth/logout', follow_redirects=True)
+    login_resp = client_owner.post('/auth/login', data={'identifier': owner_info['username'], 'password': 'password123'}, follow_redirects=True)
+    assert login_resp.status_code == 200
+
+    # Access "My Videos" page
+    response = client_owner.get('/my-videos')
+    assert response.status_code == 200
+    content = response.data.decode()
+
+    assert "My Priced Video" in content
+    assert "Set Price:</strong> $19.99" in content # Check for the displayed price
+
+    # Clean up
+    video_obj = Video.query.get(video_id)
+    if video_obj and os.path.exists(video_obj.file_path):
+        os.remove(video_obj.file_path)
+        user_upload_folder = os.path.dirname(video_obj.file_path)
+        if os.path.exists(user_upload_folder) and not os.listdir(user_upload_folder):
+            os.rmdir(user_upload_folder)

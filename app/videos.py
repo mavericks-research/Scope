@@ -6,6 +6,7 @@ from flask import Blueprint, request, jsonify, current_app, send_file, abort
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask_login import login_required, current_user # Added for session auth
 from werkzeug.utils import secure_filename
+from decimal import Decimal, InvalidOperation # Added
 from .models import Video, User
 from . import db
 
@@ -34,6 +35,24 @@ def upload_video_route(): # Renamed function to avoid conflict if we had an impo
     description = request.form.get('description')
     is_public_str = request.form.get('is_public', 'false') # Default to 'false' if not provided
     is_public = is_public_str.lower() == 'true'
+
+    is_paid_unlock_str = request.form.get('is_paid_unlock', 'false')
+    is_paid_unlock = is_paid_unlock_str.lower() == 'true'
+    price_str = request.form.get('price')
+    price = None
+
+    if is_paid_unlock:
+        if not price_str:
+            return jsonify({"msg": "Price is required for paid videos."}), 400
+        try:
+            price_decimal = Decimal(price_str)
+            if price_decimal < Decimal('0.50'): # Example minimum price
+                 return jsonify({"msg": "Price must be at least $0.50."}), 400
+            price = price_decimal
+        except InvalidOperation:
+            return jsonify({"msg": "Invalid price format."}), 400
+    elif price_str: # Price provided but not marked as paid_unlock
+        return jsonify({"msg": "Video must be marked as 'require payment' to set a price."}), 400
 
 
     if not title:
@@ -71,7 +90,9 @@ def upload_video_route(): # Renamed function to avoid conflict if we had an impo
                 file_path=file_path, # Path where it's stored
                 total_size=file_size,
                 user_id=user_id,
-                is_public=is_public # Set the visibility
+                is_public=is_public, # Set the visibility
+                is_paid_unlock=is_paid_unlock, # Set paid status
+                price=price # Set price
             )
             db.session.add(new_video)
             db.session.commit()

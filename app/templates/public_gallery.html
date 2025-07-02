@@ -105,13 +105,35 @@
                         <h3>{{ video.title }}</h3>
                         <p><strong>Description:</strong> {{ video.description or 'No description provided.' }}</p>
                         <p class="uploader-info">Uploaded by: {{ video.uploader.username }} on {{ video.created_at.strftime('%Y-%m-%d') }}</p>
-                        <div>
-                            <video width="320" height="240" controls preload="metadata">
-                                <source src="{{ url_for('videos.stream_video', video_id=video.id) }}" type="video/mp4">
-                                <!-- Consider adding more source types if you support them -->
-                                Your browser does not support the video tag.
-                            </video>
-                        </div>
+
+                        {% if video.is_paid_unlock %}
+                            {% if current_user.is_authenticated and video.id in unlocked_video_ids or (current_user.is_authenticated and video.user_id == current_user.id) %}
+                                <!-- User owns it or has unlocked it -->
+                                <div>
+                                    <video width="320" height="240" controls preload="metadata">
+                                        <source src="{{ url_for('videos.stream_video', video_id=video.id) }}" type="video/mp4">
+                                        Your browser does not support the video tag.
+                                    </video>
+                                </div>
+                            {% else %}
+                                <!-- Video is paid and not unlocked by current user (or user is anonymous) -->
+                                <div class="unlock-section">
+                                    <p><strong>Price:</strong> ${{ "%.2f"|format(video.price) }}</p>
+                                    <button class="unlock-button" data-video-id="{{ video.id }}" data-price="{{ video.price }}">
+                                        Unlock for ${{ "%.2f"|format(video.price) }}
+                                    </button>
+                                    <p style="font-size: 0.8em; color: #777;">(Payment functionality coming soon!)</p>
+                                </div>
+                            {% endif %}
+                        {% else %}
+                            <!-- Video is free -->
+                            <div>
+                                <video width="320" height="240" controls preload="metadata">
+                                    <source src="{{ url_for('videos.stream_video', video_id=video.id) }}" type="video/mp4">
+                                    Your browser does not support the video tag.
+                                </video>
+                            </div>
+                        {% endif %}
                     </li>
                 {% endfor %}
             </ul>
