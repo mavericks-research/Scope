@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Videos - Mavericks Stream</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .video-list {
+            list-style: none;
+            padding: 0;
+        }
+        .video-item {
+            background-color: #fff;
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+        }
+        .video-item h3 {
+            margin-top: 0;
+        }
+        .video-item p {
+            font-size: 0.9em;
+            color: #555;
+        }
+        .no-videos {
+            text-align: center;
+            color: #777;
+            margin-top: 20px;
+        }
+        nav ul {
+            list-style-type: none;
+            padding: 0;
+            margin-bottom: 20px;
+            background-color: #eee;
+            overflow: hidden;
+        }
+        nav ul li {
+            float: left;
+        }
+        nav ul li a {
+            display: block;
+            color: #333;
+            text-align: center;
+            padding: 14px 16px;
+            text-decoration: none;
+        }
+        nav ul li a:hover {
+            background-color: #ddd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <nav>
+            <ul>
+                <li><a href="{{ url_for('frontend.index') }}">Home (Upload)</a></li>
+                <li><a href="{{ url_for('frontend.my_videos') }}">My Videos</a></li>
+                <li><a href="{{ url_for('auth.logout') }}">Logout</a></li>
+            </ul>
+        </nav>
+
+        <h1>My Uploaded Videos</h1>
+
+        {% if videos %}
+            <ul class="video-list">
+                {% for video in videos %}
+                    <li class="video-item">
+                        <h3>{{ video.title }}</h3>
+                        <p><strong>Description:</strong> {{ video.description or 'No description provided.' }}</p>
+                        <p><strong>Filename:</strong> {{ video.filename }}</p>
+                        <p><strong>Uploaded:</strong> {{ video.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+                        {# Placeholder for actual video link/player.
+                           For now, linking to file_path might not work directly if it's not served.
+                           A dedicated play route would be better.
+                        #}
+                        <p><a href="#">Watch Video (Link not active yet)</a></p>
+                        <!-- Example if files were served directly from a 'uploads' static subfolder:
+                        <p><a href="{{ url_for('static', filename='uploads/' + current_user.id|string + '/' + video.file_path.split('/')[-1] ) }}">Play</a></p>
+                        This is just an example and depends heavily on how files are stored and served.
+                        The current video.file_path is an absolute path on the server.
+                        -->
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="no-videos">You haven't uploaded any videos yet.</p>
+        {% endif %}
+    </div>
+</body>
+</html>

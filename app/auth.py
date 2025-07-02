@@ -49,13 +49,8 @@ def signup():
 
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
-    if current_user.is_authenticated:
-        return redirect(url_for('frontend.index')) # Redirect if already logged in
-
     if request.method == 'POST':
-        # This part handles the existing JWT login for API clients
-        # It might also be used if the login form submits JSON via AJAX
-        if request.is_json:
+        if request.is_json: # Handle JSON API login first
             data = request.get_json()
             identifier = data.get('identifier')
             password = data.get('password')
@@ -75,6 +70,9 @@ def login():
             else:
                 return jsonify({"msg": "Bad username, email, or password"}), 401
         else: # Handles traditional form submission for Flask-Login
+            if current_user.is_authenticated: # Check for session auth only for form post or GET
+                return redirect(url_for('frontend.index'))
+
             identifier = request.form.get('identifier')
             password = request.form.get('password')
             remember = True if request.form.get('remember') else False
@@ -105,7 +103,9 @@ def login():
                 flash('Login Unsuccessful. Please check identifier and password', 'danger')
                 return redirect(url_for('auth.login'))
 
-    # For GET request, render the login page
+    # For GET request (which is not request.method == 'POST')
+    if current_user.is_authenticated: # Check for session auth for GET request
+        return redirect(url_for('frontend.index'))
     return render_template('login.html', title='Login')
 
 @auth_bp.route('/logout')
