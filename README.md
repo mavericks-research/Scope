@@ -72,7 +72,7 @@ Once the dependencies are installed, environment variables are configured, and t
 python manage.py
 ```
 
-The application will typically be available at `http://127.0.0.1:5000/`.
+The application will typically be available at `http://127.0.0.1:5000/`. Accessing this URL in your web browser will load the frontend interface.
 
 ## Testing
 
