@@ -105,7 +105,7 @@ def login():
 
     # For GET request (which is not request.method == 'POST')
     if current_user.is_authenticated: # Check for session auth for GET request
-        return redirect(url_for('frontend.index'))
+        return redirect(url_for('frontend.home')) # Corrected redirect to new home/gallery
     return render_template('login.html', title='Login')
 
 @auth_bp.route('/logout')

@@ -364,6 +364,33 @@ def test_root_serves_gallery_and_protected_route_redirects(client, db):
     assert 'Or view <a href="/">Public Gallery</a>' in login_page_content # Check link back to gallery
 
 
+def test_login_page_redirects_if_already_authenticated(client, db, auth_data):
+    """Test that /auth/login redirects to home if user is already authenticated."""
+    # auth_data provides a client that has just had a user ('testuser') signed up
+    # and a JWT token retrieved. However, it does not establish a Flask-Login session.
+    # We need to perform a form login first to establish the session.
+
+    authed_client, _, user_info = auth_data
+
+    # Perform a form login to establish session
+    login_resp = authed_client.post('/auth/login', data={
+        'identifier': user_info['username'],
+        'password': 'password123' # Password from auth_data fixture
+    }, follow_redirects=True)
+    assert login_resp.status_code == 200 # Should be on /upload page
+
+    # Now, with an active session, try to access /auth/login GET
+    response_login_get = authed_client.get('/auth/login', follow_redirects=False)
+    assert response_login_get.status_code == 302 # Should redirect
+    # Should redirect to 'frontend.home' which is '/'
+    assert response_login_get.headers['Location'] == '/'
+
+    # Follow redirect to ensure it lands on the gallery page
+    home_response = authed_client.get(response_login_get.headers['Location'])
+    assert home_response.status_code == 200
+    assert "Public Video Gallery" in home_response.data.decode()
+
+
 # --- Tests for Web (Form-based) Signup ---
 
 def test_get_signup_page(client, db):
