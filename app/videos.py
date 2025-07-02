@@ -17,8 +17,12 @@ def allowed_file(filename):
 @videos_bp.route('/upload', methods=['POST'])
 @jwt_required()
 def upload_video():
-    current_user_identity = get_jwt_identity()
-    user_id = current_user_identity.get('id')
+    user_id_str = get_jwt_identity() # This is now str(user.id)
+    try:
+        user_id = int(user_id_str)
+    except ValueError:
+        return jsonify({"msg": "Invalid user identity in token"}), 400
+
 
     if 'file' not in request.files:
         return jsonify({"msg": "No file part"}), 400
@@ -108,8 +112,9 @@ def get_video_metadata(video_id):
 
     # Optionally, you might want to restrict access so users can only see their own videos
     # or make it public, depending on requirements. For now, any authenticated user can see any video metadata by ID.
-    # current_user_identity = get_jwt_identity()
-    # if video.user_id != current_user_identity.get('id'):
+    # current_user_identity_str = get_jwt_identity() # This is str(user.id)
+    # current_user_id = int(current_user_identity_str)
+    # if video.user_id != current_user_id:
     #     return jsonify({"msg": "Unauthorized to view this video's metadata"}), 403
 
     return jsonify(format_video_metadata(video)), 200
@@ -117,8 +122,11 @@ def get_video_metadata(video_id):
 @videos_bp.route('/user', methods=['GET']) # Changed from /user_videos to /user for brevity
 @jwt_required()
 def get_user_videos():
-    current_user_identity = get_jwt_identity()
-    user_id = current_user_identity.get('id')
+    user_id_str = get_jwt_identity() # This is str(user.id)
+    try:
+        user_id = int(user_id_str)
+    except ValueError:
+        return jsonify({"msg": "Invalid user identity in token"}), 400
 
     user = User.query.get(user_id)
     if not user:

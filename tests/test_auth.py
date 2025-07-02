@@ -163,6 +163,8 @@ def test_protected_route_with_auth(auth_data): # Changed from auth_client to aut
     response = client.get('/auth/protected', headers={
         "Authorization": f"Bearer {access_token}"
     })
+    # if response.status_code != 200: # Removed temporary debug print
+    #     print("Response JSON for failed auth:", response.get_json())
     assert response.status_code == 200
     json_data = response.get_json()
     assert json_data['logged_in_as']['username'] == user_info['username']

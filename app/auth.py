@@ -38,7 +38,9 @@ def login():
     user = User.query.filter((User.username == identifier) | (User.email == identifier)).first()
 
     if user and user.check_password(password):
-        access_token = create_access_token(identity={'id': user.id, 'username': user.username, 'email': user.email})
+        # The identity should be simple (e.g., user_id) and a string. Store other info in additional_claims.
+        additional_claims = {'username': user.username, 'email': user.email}
+        access_token = create_access_token(identity=str(user.id), additional_claims=additional_claims)
         return jsonify(access_token=access_token), 200
     else:
         return jsonify({"msg": "Bad username, email, or password"}), 401
@@ -46,19 +48,26 @@ def login():
 @auth_bp.route('/protected', methods=['GET'])
 @jwt_required()
 def protected():
-    current_user = get_jwt_identity()
-    return jsonify(logged_in_as=current_user), 200
+    user_id_str = get_jwt_identity() # This will be str(user.id)
+    user = User.query.get(int(user_id_str)) # Convert back to int for query
+    if not user:
+        # This should ideally not happen if user_lookup_loader is working and token is valid
+        return jsonify({"msg": "User not found for valid token"}), 404
+
+    # Return the same structure as before for compatibility with current tests
+    return jsonify(logged_in_as={'id': user.id, 'username': user.username, 'email': user.email}), 200
 
 # Callback for loading a user from an access token
 # This is used by Flask-JWT-Extended to check if a user exists in the database
 @jwt.user_lookup_loader
 def user_lookup_callback(_jwt_header, jwt_data):
-    identity = jwt_data["sub"] # "sub" is the default claim for user identity
-    user_id = identity.get('id') if isinstance(identity, dict) else identity # Handle old tokens that might just have id
-
-    if user_id is None:
+    user_id_str = jwt_data["sub"] # "sub" is now str(user.id)
+    if not user_id_str: # Basic check
         return None
-
+    try:
+        user_id = int(user_id_str)
+    except ValueError: # If subject is not a valid integer string
+        return None
     return User.query.get(user_id)
 
 @jwt.expired_token_loader

@@ -17,15 +17,17 @@ def test_upload_video_requires_auth(client, db):
     assert "Request does not contain an access token" in response.get_json()['msg']
 
 
-def test_upload_video_success(auth_client, db):
+def test_upload_video_success(auth_data, db):
     """Test successful video upload by an authenticated user."""
-    user_id = auth_client.user_data['id']
+    client, access_token, user_info = auth_data
+    user_id = user_info['id']
     data = {
         'title': 'My Test Video',
         'description': 'A description for my test video.',
         'file': (io.BytesIO(b"fake video data"), "test_video.mp4")
     }
-    response = auth_client.post('/videos/upload', data=data, content_type='multipart/form-data')
+    response = client.post('/videos/upload', data=data, content_type='multipart/form-data',
+                           headers={"Authorization": f"Bearer {access_token}"})
 
     assert response.status_code == 201
     json_data = response.get_json()
@@ -49,34 +51,40 @@ def test_upload_video_success(auth_client, db):
             os.rmdir(user_upload_folder)
 
 
-def test_upload_video_missing_file(auth_client, db):
+def test_upload_video_missing_file(auth_data, db):
     """Test video upload request missing the file part."""
+    client, access_token, _ = auth_data
     data = {
         'title': 'Video Without File',
         'description': 'Trying to upload metadata only.'
     }
-    response = auth_client.post('/videos/upload', data=data, content_type='multipart/form-data')
+    response = client.post('/videos/upload', data=data, content_type='multipart/form-data',
+                           headers={"Authorization": f"Bearer {access_token}"})
     assert response.status_code == 400
     assert response.get_json()['msg'] == "No file part"
 
-def test_upload_video_missing_title(auth_client, db):
+def test_upload_video_missing_title(auth_data, db):
     """Test video upload request missing the title."""
+    client, access_token, _ = auth_data
     data = {
         'description': 'Video with no title.',
         'file': (io.BytesIO(b"fake video data"), "no_title_video.mp4")
     }
-    response = auth_client.post('/videos/upload', data=data, content_type='multipart/form-data')
+    response = client.post('/videos/upload', data=data, content_type='multipart/form-data',
+                           headers={"Authorization": f"Bearer {access_token}"})
     assert response.status_code == 400
     assert response.get_json()['msg'] == "Missing title"
 
-def test_upload_video_invalid_file_type(auth_client, db):
+def test_upload_video_invalid_file_type(auth_data, db):
     """Test video upload with an disallowed file extension."""
+    client, access_token, _ = auth_data
     data = {
         'title': 'Invalid File Type Video',
         'description': 'This should not be allowed.',
         'file': (io.BytesIO(b"fake data"), "document.txt")
     }
-    response = auth_client.post('/videos/upload', data=data, content_type='multipart/form-data')
+    response = client.post('/videos/upload', data=data, content_type='multipart/form-data',
+                           headers={"Authorization": f"Bearer {access_token}"})
     assert response.status_code == 400
     assert response.get_json()['msg'] == "File type not allowed"
 
@@ -88,28 +96,31 @@ def test_get_video_metadata_requires_auth(client, db):
     assert "Request does not contain an access token" in response.get_json()['msg']
 
 
-def test_get_video_metadata_not_found(auth_client, db):
+def test_get_video_metadata_not_found(auth_data, db):
     """Test getting metadata for a video that does not exist."""
-    response = auth_client.get('/videos/9999') # Non-existent video ID
+    client, access_token, _ = auth_data
+    response = client.get('/videos/9999', headers={"Authorization": f"Bearer {access_token}"}) # Non-existent video ID
     assert response.status_code == 404
     assert response.get_json()['msg'] == "Video not found"
 
 
-def test_get_video_metadata_success(auth_client, db):
+def test_get_video_metadata_success(auth_data, db):
     """Test successfully getting metadata for an existing video."""
+    client, access_token, user_info = auth_data
+    user_id = user_info['id']
     # First, upload a video to get its ID and ensure it exists
-    user_id = auth_client.user_data['id']
     upload_data = {
         'title': 'Metadata Test Video',
         'description': 'Video for metadata test.',
         'file': (io.BytesIO(b"metadata video data"), "metadata.mp4")
     }
-    upload_response = auth_client.post('/videos/upload', data=upload_data, content_type='multipart/form-data')
+    upload_response = client.post('/videos/upload', data=upload_data, content_type='multipart/form-data',
+                                  headers={"Authorization": f"Bearer {access_token}"})
     assert upload_response.status_code == 201
     video_id = upload_response.get_json()['video_id']
 
     # Now, try to get its metadata
-    response = auth_client.get(f'/videos/{video_id}')
+    response = client.get(f'/videos/{video_id}', headers={"Authorization": f"Bearer {access_token}"})
     assert response.status_code == 200
     json_data = response.get_json()
     assert json_data['id'] == video_id
@@ -133,10 +144,11 @@ def test_get_user_videos_requires_auth(client, db):
     assert "Request does not contain an access token" in response.get_json()['msg']
 
 
-def test_get_user_videos_success(auth_client, db):
+def test_get_user_videos_success(auth_data, db):
     """Test successfully getting all videos for the authenticated user."""
-    user_id = auth_client.user_data['id']
-    user_username = auth_client.user_data['username']
+    client, access_token, user_info = auth_data
+    user_id = user_info['id']
+    user_username = user_info['username']
 
     # Upload a couple of videos for this user
     video_details = []
@@ -147,12 +159,13 @@ def test_get_user_videos_success(auth_client, db):
             'description': f'Description for {title}',
             'file': (io.BytesIO(f"user video data {i+1}".encode('utf-8')), f"user_video_{i+1}.mp4")
         }
-        upload_response = auth_client.post('/videos/upload', data=upload_data, content_type='multipart/form-data')
+        upload_response = client.post('/videos/upload', data=upload_data, content_type='multipart/form-data',
+                                      headers={"Authorization": f"Bearer {access_token}"})
         assert upload_response.status_code == 201
         video_details.append(upload_response.get_json())
 
     # Get user's videos
-    response = auth_client.get('/videos/user')
+    response = client.get('/videos/user', headers={"Authorization": f"Bearer {access_token}"})
     assert response.status_code == 200
     json_data = response.get_json()
 
@@ -181,11 +194,12 @@ def test_get_user_videos_success(auth_client, db):
                  os.rmdir(user_upload_folder)
 
 
-def test_get_user_videos_empty(auth_client, db):
+def test_get_user_videos_empty(auth_data, db):
     """Test getting videos for a user who hasn't uploaded any."""
-    # auth_client is authenticated but assumed to have no videos yet for this specific test
+    client, access_token, _ = auth_data
+    # auth_data is authenticated but assumed to have no videos yet for this specific test
     # The db fixture ensures a clean state for each test.
-    response = auth_client.get('/videos/user')
+    response = client.get('/videos/user', headers={"Authorization": f"Bearer {access_token}"})
     assert response.status_code == 200
     json_data = response.get_json()
     assert isinstance(json_data, list)
