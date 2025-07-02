@@ -11,10 +11,11 @@ def test_upload_video_requires_auth(client, db):
         # No file part needed as it should fail before file processing
     }
     # Missing 'file' part, but auth should be checked first.
-    # If sending form-data, 'file' would be (io.BytesIO(b"dummy video data"), "test.mp4")
-    response = client.post('/videos/upload', data=data) # No auth header
+    # If sending form-data, 'video' would be (io.BytesIO(b"dummy video data"), "test.mp4")
+    response = client.post('/videos/upload_video', data=data) # No auth header, updated endpoint
     assert response.status_code == 401
-    assert "Request does not contain an access token" in response.get_json()['msg']
+    # The message comes from flask_jwt_extended
+    assert "Missing Authorization Header" in response.get_json()['msg'] or "Request does not contain an access token" in response.get_json()['msg']
 
 
 def test_upload_video_success(auth_data, db):
@@ -24,12 +25,12 @@ def test_upload_video_success(auth_data, db):
     data = {
         'title': 'My Test Video',
         'description': 'A description for my test video.',
-        'file': (io.BytesIO(b"fake video data"), "test_video.mp4")
+        'video': (io.BytesIO(b"fake video data"), "test_video.mp4") # Changed 'file' to 'video'
     }
-    response = client.post('/videos/upload', data=data, content_type='multipart/form-data',
+    response = client.post('/videos/upload_video', data=data, content_type='multipart/form-data', # Updated endpoint
                            headers={"Authorization": f"Bearer {access_token}"})
 
-    assert response.status_code == 201
+    assert response.status_code == 201, f"Expected 201, got {response.status_code}. Response: {response.data.decode()}"
     json_data = response.get_json()
     assert json_data['msg'] == "Video uploaded successfully"
     assert 'video_id' in json_data
@@ -58,19 +59,19 @@ def test_upload_video_missing_file(auth_data, db):
         'title': 'Video Without File',
         'description': 'Trying to upload metadata only.'
     }
-    response = client.post('/videos/upload', data=data, content_type='multipart/form-data',
+    response = client.post('/videos/upload_video', data=data, content_type='multipart/form-data', # Updated endpoint
                            headers={"Authorization": f"Bearer {access_token}"})
     assert response.status_code == 400
-    assert response.get_json()['msg'] == "No file part"
+    assert response.get_json()['msg'] == "No video file part" # Updated message
 
 def test_upload_video_missing_title(auth_data, db):
     """Test video upload request missing the title."""
     client, access_token, _ = auth_data
     data = {
         'description': 'Video with no title.',
-        'file': (io.BytesIO(b"fake video data"), "no_title_video.mp4")
+        'video': (io.BytesIO(b"fake video data"), "no_title_video.mp4") # Changed 'file' to 'video'
     }
-    response = client.post('/videos/upload', data=data, content_type='multipart/form-data',
+    response = client.post('/videos/upload_video', data=data, content_type='multipart/form-data', # Updated endpoint
                            headers={"Authorization": f"Bearer {access_token}"})
     assert response.status_code == 400
     assert response.get_json()['msg'] == "Missing title"
@@ -81,9 +82,9 @@ def test_upload_video_invalid_file_type(auth_data, db):
     data = {
         'title': 'Invalid File Type Video',
         'description': 'This should not be allowed.',
-        'file': (io.BytesIO(b"fake data"), "document.txt")
+        'video': (io.BytesIO(b"fake data"), "document.txt") # Changed 'file' to 'video'
     }
-    response = client.post('/videos/upload', data=data, content_type='multipart/form-data',
+    response = client.post('/videos/upload_video', data=data, content_type='multipart/form-data', # Updated endpoint
                            headers={"Authorization": f"Bearer {access_token}"})
     assert response.status_code == 400
     assert response.get_json()['msg'] == "File type not allowed"
@@ -112,11 +113,11 @@ def test_get_video_metadata_success(auth_data, db):
     upload_data = {
         'title': 'Metadata Test Video',
         'description': 'Video for metadata test.',
-        'file': (io.BytesIO(b"metadata video data"), "metadata.mp4")
+        'video': (io.BytesIO(b"metadata video data"), "metadata.mp4") # Changed 'file' to 'video'
     }
-    upload_response = client.post('/videos/upload', data=upload_data, content_type='multipart/form-data',
+    upload_response = client.post('/videos/upload_video', data=upload_data, content_type='multipart/form-data', # Updated endpoint
                                   headers={"Authorization": f"Bearer {access_token}"})
-    assert upload_response.status_code == 201
+    assert upload_response.status_code == 201, f"Setup failed: {upload_response.data.decode()}"
     video_id = upload_response.get_json()['video_id']
 
     # Now, try to get its metadata
@@ -157,11 +158,11 @@ def test_get_user_videos_success(auth_data, db):
         upload_data = {
             'title': title,
             'description': f'Description for {title}',
-            'file': (io.BytesIO(f"user video data {i+1}".encode('utf-8')), f"user_video_{i+1}.mp4")
+            'video': (io.BytesIO(f"user video data {i+1}".encode('utf-8')), f"user_video_{i+1}.mp4") # Changed 'file' to 'video'
         }
-        upload_response = client.post('/videos/upload', data=upload_data, content_type='multipart/form-data',
+        upload_response = client.post('/videos/upload_video', data=upload_data, content_type='multipart/form-data', # Updated endpoint
                                       headers={"Authorization": f"Bearer {access_token}"})
-        assert upload_response.status_code == 201
+        assert upload_response.status_code == 201, f"Setup failed for {title}: {upload_response.data.decode()}"
         video_details.append(upload_response.get_json())
 
     # Get user's videos

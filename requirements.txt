@@ -7,3 +7,4 @@ Werkzeug
 python-dotenv
 pytest
 pytest-flask
+Flask-Login

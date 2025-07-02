@@ -35,8 +35,10 @@ The application requires certain environment variables to be set. A `.env` file 
     - `DATABASE_URL`: Connection string for your database. Defaults to SQLite. For PostgreSQL, it might look like `postgresql://user:password@host:port/dbname`.
     - `JWT_SECRET_KEY`: A strong, unique secret key for JWT token generation.
     - `UPLOAD_FOLDER`: The directory where uploaded files will be stored. If not specified, it defaults to an `uploads` folder in the project root, which will be created if it doesn't exist.
+    - `FLASK_APP`: (Optional if using `python manage.py`) Specifies the application instance for Flask CLI commands. Typically `FLASK_APP=manage:app` or `FLASK_APP=app:create_app()`.
+    - `FLASK_ENV`: (Optional if using `python manage.py`) Sets the environment. Use `development` for development mode (enables debugger, reloader). `production` is the default if not set. The `DEBUG` variable in `.env` also controls debug mode when running via `python manage.py`.
 
-    **Important**: For production, ensure `DEBUG` is `False` and use strong, unique values for `SECRET_KEY` and `JWT_SECRET_KEY`.
+    **Important**: For production, ensure `DEBUG` is `False` (or `FLASK_ENV` is `production`) and use strong, unique values for `SECRET_KEY` and `JWT_SECRET_KEY`.
 
 ### Database Setup
 
@@ -108,6 +110,10 @@ To run the tests, navigate to the project root directory (the one containing `ma
 
 ```bash
 pytest
+```
+Alternatively, you can use:
+```bash
+python -m pytest
 ```
 
 Pytest will automatically discover and run the tests located in the `tests/` directory. The output will indicate the number of tests passed, failed, or skipped, along with any errors.

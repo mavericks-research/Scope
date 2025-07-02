@@ -14,20 +14,19 @@ def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-@videos_bp.route('/upload', methods=['POST'])
+@videos_bp.route('/upload_video', methods=['POST']) # Changed route to match form and plan
 @jwt_required()
-def upload_video():
-    user_id_str = get_jwt_identity() # This is now str(user.id)
+def upload_video_route(): # Renamed function to avoid conflict if we had an import named upload_video
+    user_id_str = get_jwt_identity()
     try:
         user_id = int(user_id_str)
     except ValueError:
         return jsonify({"msg": "Invalid user identity in token"}), 400
 
+    if 'video' not in request.files: # Changed 'file' to 'video' to match form
+        return jsonify({"msg": "No video file part"}), 400
 
-    if 'file' not in request.files:
-        return jsonify({"msg": "No file part"}), 400
-
-    file = request.files['file']
+    file = request.files['video'] # Changed 'file' to 'video'
     title = request.form.get('title')
     description = request.form.get('description')
 
