@@ -10,7 +10,7 @@
     <h1>Welcome to Mavericks Stream!</h1>
 
     <h2>Upload Video</h2>
-    <form action="{{ url_for('videos.upload_video') }}" method="post" enctype="multipart/form-data">
+    <form action="{{ url_for('videos.upload_video_route') }}" method="post" enctype="multipart/form-data">
         <div>
             <label for="title">Title:</label>
             <input type="text" id="title" name="title" required>
