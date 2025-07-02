@@ -89,7 +89,18 @@ def login():
                 login_user(user, remember=remember)
                 next_page = request.args.get('next')
                 flash('Logged in successfully!', 'success')
-                return redirect(next_page or url_for('frontend.index'))
+
+                # Generate JWT for client-side JavaScript
+                additional_claims = {'username': user.username, 'email': user.email}
+                access_token = create_access_token(identity=str(user.id), additional_claims=additional_claims)
+
+                # Redirect to the next page (or frontend.index) and pass the token as a query parameter
+                # Note: Passing tokens in URL is not ideal for security. Consider alternatives for production.
+                target_url = next_page or url_for('frontend.index')
+                if '?' in target_url:
+                    return redirect(f"{target_url}&access_token={access_token}")
+                else:
+                    return redirect(f"{target_url}?access_token={access_token}")
             else:
                 flash('Login Unsuccessful. Please check identifier and password', 'danger')
                 return redirect(url_for('auth.login'))

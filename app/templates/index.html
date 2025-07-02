@@ -26,6 +26,19 @@
         <button type="submit">Upload</button>
     </form>
 
+    <script>
+        // Check if an access_token was passed from the server (e.g., in URL after form login)
+        const accessTokenFromServer = "{{ access_token or '' }}"; // Use 'or """' to ensure it's a string
+        if (accessTokenFromServer) {
+            console.log("Access token received from server, storing in localStorage.");
+            localStorage.setItem('access_token', accessTokenFromServer);
+            // Optional: Clean the token from the URL to prevent it from staying in history/bookmarks
+            if (window.history.replaceState) {
+                const cleanURL = window.location.pathname; // Or window.location.href.split('?')[0];
+                window.history.replaceState({ path: cleanURL }, '', cleanURL);
+            }
+        }
+    </script>
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>

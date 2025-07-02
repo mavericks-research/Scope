@@ -11,6 +11,16 @@ document.addEventListener('DOMContentLoaded', () => {
             messageDiv.textContent = ''; // Clear previous messages
             messageDiv.className = ''; // Clear previous classes
 
+            const token = localStorage.getItem('access_token');
+            if (!token || token === "null" || token.trim() === "") {
+                messageDiv.textContent = 'Error: You are not logged in or your session is invalid. Please log out and log in again to upload videos.';
+                messageDiv.className = 'message error';
+                // Optionally, re-enable submit button if you want them to try again after e.g. manual login in another tab
+                // submitButton.disabled = false;
+                // submitButton.textContent = 'Upload';
+                return; // Stop the submission
+            }
+
             const formData = new FormData(videoForm);
             const submitButton = videoForm.querySelector('button[type="submit"]');
             submitButton.disabled = true;
@@ -21,9 +31,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     method: 'POST',
                     body: formData,
                     headers: {
-                        // Assuming JWT token is stored in localStorage, common practice
-                        // Adjust if your token storage mechanism is different
-                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                        'Authorization': `Bearer ${token}` // Use the retrieved token
                     }
                 });
 
