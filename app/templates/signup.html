@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ title or "Login" }} - Mavericks Stream</title>
+    <title>Sign Up - Mavericks Stream</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <div class="container">
-        <h1>{{ title or "Login" }}</h1>
+        <h1>Sign Up</h1>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
@@ -18,22 +18,22 @@
             {% endif %}
         {% endwith %}
 
-        <form method="POST" action="{{ url_for('auth.login') }}">
+        <form method="POST" action="{{ url_for('auth.signup') }}">
             <div>
-                <label for="identifier">Username or Email:</label>
-                <input type="text" id="identifier" name="identifier" required>
+                <label for="username">Username:</label>
+                <input type="text" id="username" name="username" required>
+            </div>
+            <div>
+                <label for="email">Email:</label>
+                <input type="email" id="email" name="email" required>
             </div>
             <div>
                 <label for="password">Password:</label>
                 <input type="password" id="password" name="password" required>
             </div>
-            <div>
-                <input type="checkbox" id="remember" name="remember">
-                <label for="remember">Remember Me</label>
-            </div>
-            <button type="submit">Login</button>
+            <button type="submit">Sign Up</button>
         </form>
-        <p>Don't have an account? <a href="{{ url_for('auth.signup') }}">Sign Up here</a></p>
+        <p>Already have an account? <a href="{{ url_for('auth.login') }}">Login here</a></p>
     </div>
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>

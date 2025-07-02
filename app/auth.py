@@ -7,27 +7,47 @@ from flask_login import login_user, logout_user, current_user # Added for Flask-
 
 auth_bp = Blueprint('auth', __name__)
 
-@auth_bp.route('/signup', methods=['POST'])
+@auth_bp.route('/signup', methods=['GET', 'POST']) # Added GET method
 def signup():
-    data = request.get_json()
-    username = data.get('username')
-    email = data.get('email')
-    password = data.get('password')
+    if request.method == 'POST':
+        if request.is_json:
+            data = request.get_json()
+            username = data.get('username')
+            email = data.get('email')
+            password = data.get('password')
+            is_form_submission = False
+        else: # Form submission
+            username = request.form.get('username')
+            email = request.form.get('email')
+            password = request.form.get('password')
+            is_form_submission = True
 
-    if not username or not email or not password:
-        return jsonify({"msg": "Missing username, email, or password"}), 400
+        if not username or not email or not password:
+            if is_form_submission:
+                flash("Missing username, email, or password", 'danger')
+                return redirect(url_for('auth.signup'))
+            return jsonify({"msg": "Missing username, email, or password"}), 400
 
-    if User.query.filter_by(username=username).first() or \
-       User.query.filter_by(email=email).first():
-        return jsonify({"msg": "Username or email already exists"}), 409 # 409 Conflict
+        if User.query.filter_by(username=username).first() or \
+           User.query.filter_by(email=email).first():
+            if is_form_submission:
+                flash("Username or email already exists", 'danger')
+                return redirect(url_for('auth.signup'))
+            return jsonify({"msg": "Username or email already exists"}), 409 # 409 Conflict
 
-    new_user = User(username=username, email=email, password=password)
-    db.session.add(new_user)
-    db.session.commit()
+        new_user = User(username=username, email=email, password=password)
+        db.session.add(new_user)
+        db.session.commit()
 
-    return jsonify({"msg": "User created successfully"}), 201
+        if is_form_submission:
+            flash("Account created successfully! Please log in.", 'success')
+            return redirect(url_for('auth.login'))
+        return jsonify({"msg": "User created successfully"}), 201
 
-@auth_bp.route('/login', methods=['GET', 'POST']) # Added GET method
+    # For GET request, render the signup page
+    return render_template('signup.html', title='Sign Up')
+
+@auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
     if current_user.is_authenticated:
         return redirect(url_for('frontend.index')) # Redirect if already logged in
