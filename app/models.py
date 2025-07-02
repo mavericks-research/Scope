@@ -34,6 +34,7 @@ class Video(db.Model):
     filename = db.Column(db.String(200), nullable=False) # Original name of the uploaded file
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     uploader = db.relationship('User', backref=db.backref('videos', lazy=True))
+    is_public = db.Column(db.Boolean, nullable=False, default=False) # Added for video visibility
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 

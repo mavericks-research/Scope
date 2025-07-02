@@ -32,6 +32,9 @@ def upload_video_route(): # Renamed function to avoid conflict if we had an impo
     file = request.files['video'] # Changed 'file' to 'video'
     title = request.form.get('title')
     description = request.form.get('description')
+    is_public_str = request.form.get('is_public', 'false') # Default to 'false' if not provided
+    is_public = is_public_str.lower() == 'true'
+
 
     if not title:
         return jsonify({"msg": "Missing title"}), 400
@@ -67,7 +70,8 @@ def upload_video_route(): # Renamed function to avoid conflict if we had an impo
                 filename=original_filename, # Original filename from upload
                 file_path=file_path, # Path where it's stored
                 total_size=file_size,
-                user_id=user_id
+                user_id=user_id,
+                is_public=is_public # Set the visibility
             )
             db.session.add(new_video)
             db.session.commit()
@@ -139,15 +143,23 @@ def get_user_videos():
     return jsonify([format_video_metadata(video) for video in videos]), 200
 
 @videos_bp.route('/stream/<int:video_id>')
-@login_required # Use Flask-Login for session authentication for web page embedding
+# @login_required # Removed to allow anonymous access to public video streams
 def stream_video(video_id):
     video = Video.query.get_or_404(video_id)
 
-    if video.user_id != current_user.id:
-        # Optional: Allow admins to view any video, or implement more complex sharing logic later
-        # For now, only the owner can stream their own video via this direct stream link.
-        current_app.logger.warning(f"Unauthorized attempt to stream video ID {video_id} by user {current_user.id}. Video owner: {video.user_id}")
-        abort(403) # Forbidden
+    if not video.is_public:
+        # Video is private, requires authentication and ownership
+        if not current_user.is_authenticated:
+            current_app.logger.warning(
+                f"Anonymous user attempted to stream private video ID {video_id}."
+            )
+            abort(401) # Unauthorized - login required
+        elif video.user_id != current_user.id:
+            current_app.logger.warning(
+                f"User {current_user.id} attempted to stream private video ID {video_id} owned by {video.user_id}."
+            )
+            abort(403) # Forbidden - user does not own video
+    # If video is public, anyone can stream it (logged in or anonymous)
 
     if not os.path.exists(video.file_path):
         current_app.logger.error(f"Video file not found for video ID {video_id} at path {video.file_path}")
@@ -168,3 +180,29 @@ def stream_video(video_id):
     except Exception as e:
         current_app.logger.error(f"Error sending file for video ID {video_id}: {e}")
         abort(500)
+
+@videos_bp.route('/<int:video_id>/toggle-visibility', methods=['POST'])
+@login_required # Ensure user is logged in
+def toggle_video_visibility(video_id):
+    video = Video.query.get_or_404(video_id)
+
+    # Check if the current user is the owner of the video
+    if video.user_id != current_user.id:
+        current_app.logger.warning(f"User {current_user.id} attempted to toggle visibility for video {video.id} owned by {video.user_id}.")
+        abort(403) # Forbidden
+
+    try:
+        video.is_public = not video.is_public
+        db.session.commit()
+        # flash(f"Video '{video.title}' is now {'public' if video.is_public else 'private'}.", "success")
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error toggling video visibility for video {video.id}: {e}")
+        # flash("Error updating video visibility. Please try again.", "error")
+        abort(500) # Or handle more gracefully, perhaps redirecting with an error message
+
+    # Redirect back to the 'my_videos' page, or wherever is appropriate
+    # For HTMX or JS-driven updates, you might return a JSON response or a partial template
+    from flask import redirect, url_for, flash # Moved imports here to avoid circular dependency if this file grows
+    flash(f"Video '{video.title}' visibility updated to {'Public' if video.is_public else 'Private'}.", "success")
+    return redirect(url_for('frontend.my_videos'))

@@ -89,6 +89,66 @@ def test_upload_video_invalid_file_type(auth_data, db):
     assert response.status_code == 400
     assert response.get_json()['msg'] == "File type not allowed"
 
+def test_upload_video_default_private(auth_data, db):
+    """Test that a video is private by default when is_public is not specified."""
+    client, access_token, user_info = auth_data
+    data = {
+        'title': 'Default Private Video',
+        'description': 'This video should be private.',
+        'video': (io.BytesIO(b"private video data"), "default_private.mp4")
+    }
+    response = client.post('/videos/upload_video', data=data, content_type='multipart/form-data',
+                           headers={"Authorization": f"Bearer {access_token}"})
+    assert response.status_code == 201
+    video_id = response.get_json()['video_id']
+    video = Video.query.get(video_id)
+    assert video is not None
+    assert video.is_public is False
+    # Cleanup
+    if os.path.exists(video.file_path): os.remove(video.file_path)
+    if not os.listdir(os.path.dirname(video.file_path)): os.rmdir(os.path.dirname(video.file_path))
+
+
+def test_upload_video_set_public(auth_data, db):
+    """Test uploading a video and explicitly setting it to public."""
+    client, access_token, user_info = auth_data
+    data = {
+        'title': 'Public Test Video',
+        'description': 'This video is set to public.',
+        'video': (io.BytesIO(b"public video data"), "test_public.mp4"),
+        'is_public': 'true'
+    }
+    response = client.post('/videos/upload_video', data=data, content_type='multipart/form-data',
+                           headers={"Authorization": f"Bearer {access_token}"})
+    assert response.status_code == 201
+    video_id = response.get_json()['video_id']
+    video = Video.query.get(video_id)
+    assert video is not None
+    assert video.is_public is True
+    # Cleanup
+    if os.path.exists(video.file_path): os.remove(video.file_path)
+    if not os.listdir(os.path.dirname(video.file_path)): os.rmdir(os.path.dirname(video.file_path))
+
+def test_upload_video_set_explicitly_private(auth_data, db):
+    """Test uploading a video and explicitly setting it to private."""
+    client, access_token, user_info = auth_data
+    data = {
+        'title': 'Explicit Private Video',
+        'description': 'This video is explicitly private.',
+        'video': (io.BytesIO(b"explicit private data"), "explicit_private.mp4"),
+        'is_public': 'false'
+    }
+    response = client.post('/videos/upload_video', data=data, content_type='multipart/form-data',
+                           headers={"Authorization": f"Bearer {access_token}"})
+    assert response.status_code == 201
+    video_id = response.get_json()['video_id']
+    video = Video.query.get(video_id)
+    assert video is not None
+    assert video.is_public is False
+    # Cleanup
+    if os.path.exists(video.file_path): os.remove(video.file_path)
+    if not os.listdir(os.path.dirname(video.file_path)): os.rmdir(os.path.dirname(video.file_path))
+
 
 def test_get_video_metadata_requires_auth(client, db):
     """Test that getting video metadata requires authentication."""
@@ -209,85 +269,185 @@ def test_get_user_videos_empty(auth_data, db):
 
 # --- Tests for Video Streaming ---
 
-def test_stream_video_unauthenticated(client, db):
-    """Test streaming requires login."""
-    # Assume video ID 1 exists for this test, or handle potential 404 if not.
-    # The main point is to check auth.
-    response = client.get('/videos/stream/1', follow_redirects=False)
-    assert response.status_code == 302 # Should redirect to login
-    assert '/auth/login' in response.headers['Location']
-
-def test_stream_video_non_existent(client, db):
-    """Test streaming a non-existent video ID."""
-    # Need to be authenticated to get past @login_required to the 404
-    # Create a dummy user and log them in via form for session
-    signup_resp = client.post('/auth/signup', json={"username": "streamtestuser", "email": "stream@example.com", "password": "password"})
-    assert signup_resp.status_code == 201
-
-    login_resp = client.post('/auth/login', data={'identifier': 'streamtestuser', 'password': 'password'}, follow_redirects=True)
-    assert login_resp.status_code == 200 # Successfully logged in
-
-    response = client.get('/videos/stream/99999') # Non-existent ID
-    assert response.status_code == 404
-
-def test_stream_video_unauthorized_other_user(client, db, app):
-    """Test streaming another user's video results in 403."""
-    # User A (owner)
-    signup_a_resp = client.post('/auth/signup', json={"username": "ownera", "email": "ownera@example.com", "password": "passworda"})
+def test_stream_private_video_unauthenticated(client, db, app):
+    """Test streaming a private video by an unauthenticated user results in 401."""
+    # User A (owner) signs up and uploads a private video
+    signup_a_resp = client.post('/auth/signup', json={"username": "ownera_priv_stream", "email": "ownera_priv_stream@example.com", "password": "passworda"})
     assert signup_a_resp.status_code == 201
-    jwt_login_a_resp = client.post('/auth/login', json={'identifier': 'ownera', 'password': 'passworda'})
+    jwt_login_a_resp = client.post('/auth/login', json={'identifier': 'ownera_priv_stream', 'password': 'passworda'})
     jwt_a = jwt_login_a_resp.get_json()['access_token']
 
+    video_content = b"private stream data"
     upload_resp = client.post('/videos/upload_video', data={
-        'title': "Owner A's Video", 'video': (io.BytesIO(b"data a"), "video_a.mp4")
+        'title': "Owner A's Private Video",
+        'video': (io.BytesIO(video_content), "video_a_private.mp4"),
+        'is_public': 'false' # Explicitly private
     }, content_type='multipart/form-data', headers={"Authorization": f"Bearer {jwt_a}"})
     assert upload_resp.status_code == 201
     video_a_id = upload_resp.get_json()['video_id']
+    video_a_path = Video.query.get(video_a_id).file_path
+
+
+    # Logout all users (clear session)
+    client.get('/auth/logout', follow_redirects=True)
+
+    # Unauthenticated client tries to stream User A's private video
+    response = client.get(f'/videos/stream/{video_a_id}')
+    assert response.status_code == 401 # Unauthorized as per new logic
+
+    # Cleanup
+    if os.path.exists(video_a_path): os.remove(video_a_path)
+    if not os.listdir(os.path.dirname(video_a_path)): os.rmdir(os.path.dirname(video_a_path))
+
+
+def test_stream_public_video_anonymous(client, db, app):
+    """Test streaming a public video as an anonymous (unauthenticated) user."""
+    # User A (owner) signs up and uploads a public video
+    signup_a_resp = client.post('/auth/signup', json={"username": "ownera_pub_stream", "email": "ownera_pub_stream@example.com", "password": "passworda"})
+    assert signup_a_resp.status_code == 201
+    jwt_login_a_resp = client.post('/auth/login', json={'identifier': 'ownera_pub_stream', 'password': 'passworda'})
+    jwt_a = jwt_login_a_resp.get_json()['access_token']
+
+    video_content = b"public stream data"
+    upload_resp = client.post('/videos/upload_video', data={
+        'title': "Owner A's Public Video",
+        'video': (io.BytesIO(video_content), "video_a_public.mp4"),
+        'is_public': 'true' # Explicitly public
+    }, content_type='multipart/form-data', headers={"Authorization": f"Bearer {jwt_a}"})
+    assert upload_resp.status_code == 201
+    video_a_id = upload_resp.get_json()['video_id']
+    video_a_path = Video.query.get(video_a_id).file_path
+
+    # Logout all users (clear session)
+    client.get('/auth/logout', follow_redirects=True)
+
+    # Unauthenticated client tries to stream User A's public video
+    response = client.get(f'/videos/stream/{video_a_id}')
+    assert response.status_code == 200
+    assert response.data == video_content
+    assert response.content_type == 'video/mp4'
+
+    # Cleanup
+    if os.path.exists(video_a_path): os.remove(video_a_path)
+    if not os.listdir(os.path.dirname(video_a_path)): os.rmdir(os.path.dirname(video_a_path))
+
+
+def test_stream_video_non_existent(client, db): # No auth needed if video doesn't exist (404)
+    """Test streaming a non-existent video ID."""
+    # No login needed, as 404 should be returned before auth checks for non-existent entities.
+    response = client.get('/videos/stream/99999') # Non-existent ID
+    assert response.status_code == 404
+
+
+def test_stream_private_video_unauthorized_other_user(client, db, app):
+    """Test streaming another user's private video results in 403."""
+    # User A (owner)
+    signup_a_resp = client.post('/auth/signup', json={"username": "ownera_priv", "email": "ownera_priv@example.com", "password": "passworda"})
+    assert signup_a_resp.status_code == 201
+    jwt_login_a_resp = client.post('/auth/login', json={'identifier': 'ownera_priv', 'password': 'passworda'})
+    jwt_a = jwt_login_a_resp.get_json()['access_token']
+
+    upload_resp = client.post('/videos/upload_video', data={
+        'title': "Owner A's Private Video",
+        'video': (io.BytesIO(b"data a private"), "video_a_priv.mp4"),
+        'is_public': 'false' # Explicitly private
+    }, content_type='multipart/form-data', headers={"Authorization": f"Bearer {jwt_a}"})
+    assert upload_resp.status_code == 201
+    video_a_id = upload_resp.get_json()['video_id']
+    video_a_path = Video.query.get(video_a_id).file_path
+
 
     # User B (requester)
-    signup_b_resp = client.post('/auth/signup', json={"username": "requesterb", "email": "requesterb@example.com", "password": "passwordb"})
+    signup_b_resp = client.post('/auth/signup', json={"username": "requesterb_priv", "email": "requesterb_priv@example.com", "password": "passwordb"})
     assert signup_b_resp.status_code == 201
     # Log in User B via form for session auth
-    login_b_resp = client.post('/auth/login', data={'identifier': 'requesterb', 'password': 'passwordb'}, follow_redirects=True)
+    login_b_resp = client.post('/auth/login', data={'identifier': 'requesterb_priv', 'password': 'passwordb'}, follow_redirects=True)
     assert login_b_resp.status_code == 200
 
-    # User B tries to stream User A's video
+    # User B tries to stream User A's private video
     response = client.get(f'/videos/stream/{video_a_id}')
     assert response.status_code == 403 # Forbidden
 
-def test_stream_video_success_owner(client, db, app):
-    """Test successful video streaming by the video owner."""
+    # Cleanup
+    if os.path.exists(video_a_path): os.remove(video_a_path)
+    if not os.listdir(os.path.dirname(video_a_path)): os.rmdir(os.path.dirname(video_a_path))
+
+
+def test_stream_public_video_authenticated_non_owner(client, db, app):
+    """Test streaming another user's public video as an authenticated user."""
+    # User A (owner) uploads a public video
+    signup_a_resp = client.post('/auth/signup', json={"username": "ownera_pub", "email": "ownera_pub@example.com", "password": "passworda"})
+    assert signup_a_resp.status_code == 201
+    jwt_login_a_resp = client.post('/auth/login', json={'identifier': 'ownera_pub', 'password': 'passworda'})
+    jwt_a = jwt_login_a_resp.get_json()['access_token']
+
+    video_content_public = b"public data from owner a"
+    upload_resp = client.post('/videos/upload_video', data={
+        'title': "Owner A's Public Video",
+        'video': (io.BytesIO(video_content_public), "video_a_pub.mp4"),
+        'is_public': 'true' # Explicitly public
+    }, content_type='multipart/form-data', headers={"Authorization": f"Bearer {jwt_a}"})
+    assert upload_resp.status_code == 201
+    video_a_id = upload_resp.get_json()['video_id']
+    video_a_path = Video.query.get(video_a_id).file_path
+
+    # User B (requester) signs up and logs in
+    signup_b_resp = client.post('/auth/signup', json={"username": "requesterb_pub", "email": "requesterb_pub@example.com", "password": "passwordb"})
+    assert signup_b_resp.status_code == 201
+    login_b_resp = client.post('/auth/login', data={'identifier': 'requesterb_pub', 'password': 'passwordb'}, follow_redirects=True)
+    assert login_b_resp.status_code == 200
+
+    # User B tries to stream User A's public video
+    response = client.get(f'/videos/stream/{video_a_id}')
+    assert response.status_code == 200
+    assert response.data == video_content_public
+    assert response.content_type == 'video/mp4'
+
+    # Cleanup
+    if os.path.exists(video_a_path): os.remove(video_a_path)
+    if not os.listdir(os.path.dirname(video_a_path)): os.rmdir(os.path.dirname(video_a_path))
+
+
+def test_stream_private_video_success_owner(client, db, app):
+    """Test successful private video streaming by the video owner."""
     # Signup and login user
-    signup_resp = client.post('/auth/signup', json={"username": "streamowner", "email": "streamowner@example.com", "password": "password"})
+    signup_resp = client.post('/auth/signup', json={"username": "streamowner_priv", "email": "streamowner_priv@example.com", "password": "password"})
     assert signup_resp.status_code == 201
 
     # Get JWT for upload
-    jwt_login_resp = client.post('/auth/login', json={'identifier': 'streamowner', 'password': 'password'})
+    jwt_login_resp = client.post('/auth/login', json={'identifier': 'streamowner_priv', 'password': 'password'})
     assert jwt_login_resp.status_code == 200
     jwt_token = jwt_login_resp.get_json()['access_token']
 
-    # Upload a video
-    video_content = b"dummy mp4 video content for streaming test"
+    # Upload a private video
+    video_content = b"dummy mp4 private video content for streaming test"
     upload_resp = client.post('/videos/upload_video', data={
-        'title': "Streamable Video", 'video': (io.BytesIO(video_content), "stream_test.mp4")
+        'title': "Streamable Private Video",
+        'video': (io.BytesIO(video_content), "stream_test_private.mp4"),
+        'is_public': 'false' # Explicitly private
     }, content_type='multipart/form-data', headers={"Authorization": f"Bearer {jwt_token}"})
     assert upload_resp.status_code == 201
     video_id = upload_resp.get_json()['video_id']
+    video_path = Video.query.get(video_id).file_path
+
 
     # Log in via form for session auth to access streaming endpoint
-    form_login_resp = client.post('/auth/login', data={'identifier': 'streamowner', 'password': 'password'}, follow_redirects=True)
+    form_login_resp = client.post('/auth/login', data={'identifier': 'streamowner_priv', 'password': 'password'}, follow_redirects=True)
     assert form_login_resp.status_code == 200
 
     # Stream the video
     response = client.get(f'/videos/stream/{video_id}')
     assert response.status_code == 200
-    assert response.content_type == 'video/mp4' # Based on default in stream_video route
+    assert response.content_type == 'video/mp4'
     assert response.data == video_content
-    # For as_attachment=False, Content-Disposition is typically "inline; filename=..."
-    # So, we check it's not None and starts with "inline"
     content_disposition = response.headers.get('Content-Disposition')
     assert content_disposition is not None
-    assert content_disposition.startswith('inline; filename='), f"Content-Disposition was '{content_disposition}', expected to start with 'inline; filename='"
+    assert content_disposition.startswith('inline; filename=')
+
+    # Cleanup
+    if os.path.exists(video_path): os.remove(video_path)
+    if not os.listdir(os.path.dirname(video_path)): os.rmdir(os.path.dirname(video_path))
+
 
 @pytest.mark.skip(reason="Need to mock os.path.exists for this test properly")
 def test_stream_video_file_not_found_on_disk(client, db, app, mocker):
@@ -320,3 +480,110 @@ def test_stream_video_file_not_found_on_disk(client, db, app, mocker):
 
     response = client.get(f'/videos/stream/{video_id}')
     assert response.status_code == 404 # As per current route logic
+
+
+# --- Tests for Video Visibility Toggle ---
+
+def test_toggle_video_visibility_owner(auth_data, db):
+    """Test that the video owner can toggle video visibility."""
+    client, access_token, user_info = auth_data
+    user_id = user_info['id']
+
+    # Upload a video, will be private by default
+    upload_data = {
+        'title': 'Toggle Test Video',
+        'video': (io.BytesIO(b"toggle data"), "toggle.mp4")
+    }
+    upload_response = client.post('/videos/upload_video', data=upload_data, content_type='multipart/form-data',
+                                  headers={"Authorization": f"Bearer {access_token}"})
+    assert upload_response.status_code == 201
+    video_id = upload_response.get_json()['video_id']
+
+    video = Video.query.get(video_id)
+    assert video.is_public is False # Initially private
+
+    # Ensure clean session state then log in via form for session auth
+    client.get('/auth/logout', follow_redirects=True) # Logout any existing session
+    login_form_response = client.post('/auth/login', data={'identifier': user_info['username'], 'password': 'password123'}, follow_redirects=True)
+    assert login_form_response.status_code == 200
+    assert b"Logged in successfully!" in login_form_response.data
+
+
+    # Toggle to public
+    toggle_response_public = client.post(f'/videos/{video_id}/toggle-visibility', follow_redirects=True)
+    assert toggle_response_public.status_code == 200 # Redirects to my_videos
+    assert b"visibility updated to Public" in toggle_response_public.data # Check flash message
+    db.session.refresh(video) # Refresh from DB
+    assert video.is_public is True
+
+    # Toggle back to private
+    toggle_response_private = client.post(f'/videos/{video_id}/toggle-visibility', follow_redirects=True)
+    assert toggle_response_private.status_code == 200
+    assert b"visibility updated to Private" in toggle_response_private.data
+    db.session.refresh(video)
+    assert video.is_public is False
+
+    # Cleanup
+    if os.path.exists(video.file_path): os.remove(video.file_path)
+    if not os.listdir(os.path.dirname(video.file_path)): os.rmdir(os.path.dirname(video.file_path))
+
+
+def test_toggle_video_visibility_not_owner(auth_data, db):
+    """Test that a non-owner cannot toggle video visibility."""
+    client, owner_access_token, owner_info = auth_data # This is User1 (owner)
+
+    # User1 (owner) uploads a video
+    upload_data = {
+        'title': 'Owner Video For Toggle Test',
+        'video': (io.BytesIO(b"owner video data"), "owner_video.mp4")
+    }
+    upload_response = client.post('/videos/upload_video', data=upload_data, content_type='multipart/form-data',
+                                  headers={"Authorization": f"Bearer {owner_access_token}"})
+    assert upload_response.status_code == 201
+    video_id = upload_response.get_json()['video_id']
+    video = Video.query.get(video_id)
+    initial_visibility = video.is_public
+
+    # Create and log in User2 (non-owner)
+    client.post('/auth/signup', json={"username": "nonowner", "email": "nonowner@example.com", "password": "password"})
+    # Log in User2 via form for session auth
+    login_resp_non_owner = client.post('/auth/login', data={'identifier': 'nonowner', 'password': 'password'}, follow_redirects=True)
+    assert login_resp_non_owner.status_code == 200
+
+
+    # User2 (non-owner) attempts to toggle visibility
+    toggle_response = client.post(f'/videos/{video_id}/toggle-visibility')
+    assert toggle_response.status_code == 403 # Forbidden
+
+    db.session.refresh(video) # Refresh from DB
+    assert video.is_public == initial_visibility # Visibility should not have changed
+
+    # Cleanup for owner's video
+    if os.path.exists(video.file_path): os.remove(video.file_path)
+    user_upload_folder = os.path.dirname(video.file_path)
+    if os.path.exists(user_upload_folder) and not os.listdir(user_upload_folder):
+        os.rmdir(user_upload_folder)
+
+
+def test_toggle_video_visibility_non_existent(auth_data, db):
+    """Test toggling visibility for a video that does not exist."""
+    client, _, user_info = auth_data
+    # Ensure clean session state then log in via form for session auth
+    client.get('/auth/logout', follow_redirects=True) # Logout any existing session
+    login_form_response = client.post('/auth/login', data={'identifier': user_info['username'], 'password': 'password123'}, follow_redirects=True)
+    assert login_form_response.status_code == 200
+    assert b"Logged in successfully!" in login_form_response.data
+
+    response = client.post('/videos/99999/toggle-visibility') # Non-existent video ID
+    assert response.status_code == 404
+
+
+def test_toggle_video_visibility_unauthenticated(client, db):
+    """Test that an unauthenticated user cannot toggle visibility and is redirected."""
+    # No need to upload a video, as auth check should happen first.
+    # If a video ID is required for the route to resolve, it would be:
+    # client.post('/videos/1/toggle-visibility', follow_redirects=False)
+    # However, the endpoint itself is protected by @login_required
+    response = client.post('/videos/1/toggle-visibility', follow_redirects=False) # Assuming video ID 1 might exist or not
+    assert response.status_code == 302 # Redirect to login
+    assert '/auth/login' in response.headers['Location']

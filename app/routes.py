@@ -16,3 +16,8 @@ def index():
 def my_videos():
     user_videos = Video.query.filter_by(user_id=current_user.id).order_by(Video.created_at.desc()).all()
     return render_template('videos.html', videos=user_videos, title="My Videos")
+
+@frontend_bp.route('/gallery')
+def public_gallery():
+    public_videos = Video.query.filter_by(is_public=True).order_by(Video.created_at.desc()).all()
+    return render_template('public_gallery.html', videos=public_videos, title="Public Video Gallery")

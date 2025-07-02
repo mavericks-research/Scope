@@ -99,7 +99,7 @@ def test_my_videos_authenticated_with_videos(client, db, app): # Removed auth_da
 
     for video_db_obj in uploaded_videos:
         expected_video_src = f'/videos/stream/{video_db_obj.id}'
-        assert f'<video width="320" height="240" controls>' in content
+        assert f'<video width="320" height="240" controls preload="metadata">' in content
         assert f'<source src="{expected_video_src}" type="video/mp4">' in content
         # Check if the title associated with this video_db_obj is one of the video_titles
         assert video_db_obj.title in video_titles
@@ -187,7 +187,7 @@ def test_my_videos_isolation(client, db, app): # Removed auth_data
     assert response_a.status_code == 200
     content_a = response_a.data.decode()
     assert "My Uploaded Videos" in content_a
-    assert "User A's Video" in content_a # Check title
+    assert "User A&#39;s Video" in content_a # Check title with HTML encoding
 
     # Check for video tag for User A's video
     usera_obj_final = User.query.filter_by(username="usera").first()
@@ -195,7 +195,184 @@ def test_my_videos_isolation(client, db, app): # Removed auth_data
     assert video_a_final is not None, "User A's video not found in DB at final check"
 
     expected_video_a_src = f'/videos/stream/{video_a_final.id}'
-    assert f'<video width="320" height="240" controls>' in content_a
+    assert f'<video width="320" height="240" controls preload="metadata">' in content_a # Updated controls attribute
     assert f'<source src="{expected_video_a_src}" type="video/mp4">' in content_a
 
     assert "You haven't uploaded any videos yet." not in content_a
+
+
+# --- Tests for Public Gallery and My Videos Visibility ---
+
+def test_public_gallery_empty(client, db):
+    """Test the public gallery when no public videos are available."""
+    response = client.get('/gallery')
+    assert response.status_code == 200
+    content = response.data.decode()
+    assert "Public Video Gallery" in content
+    assert "No public videos available at the moment." in content
+
+def test_public_gallery_with_public_and_private_videos(client, db, app):
+    """Test the public gallery displays only public videos."""
+    # User A uploads a public video
+    signup_a_resp = client.post('/auth/signup', json={"username": "gallery_usera", "email": "gallery_usera@example.com", "password": "password"})
+    assert signup_a_resp.status_code == 201
+    jwt_login_a_resp = client.post('/auth/login', json={'identifier': 'gallery_usera', 'password': 'password'})
+    jwt_a = jwt_login_a_resp.get_json()['access_token']
+
+    client.post('/videos/upload_video', data={
+        'title': "Public Gallery Video", 'video': (io.BytesIO(b"public_gallery_data"), "public.mp4"), 'is_public': 'true'
+    }, content_type='multipart/form-data', headers={"Authorization": f"Bearer {jwt_a}"})
+
+    # User B uploads a private video
+    signup_b_resp = client.post('/auth/signup', json={"username": "gallery_userb", "email": "gallery_userb@example.com", "password": "password"})
+    assert signup_b_resp.status_code == 201
+    jwt_login_b_resp = client.post('/auth/login', json={'identifier': 'gallery_userb', 'password': 'password'})
+    jwt_b = jwt_login_b_resp.get_json()['access_token']
+
+    client.post('/videos/upload_video', data={
+        'title': "Private Gallery Video", 'video': (io.BytesIO(b"private_gallery_data"), "private.mp4"), 'is_public': 'false'
+    }, content_type='multipart/form-data', headers={"Authorization": f"Bearer {jwt_b}"})
+
+    # Access public gallery (anonymous)
+    response = client.get('/gallery')
+    assert response.status_code == 200
+    content = response.data.decode()
+    assert "Public Video Gallery" in content
+    assert "Public Gallery Video" in content
+    assert "Private Gallery Video" not in content
+    assert "No public videos available at the moment." not in content
+
+    # Verify video stream link is present for the public video
+    public_video_obj = Video.query.filter_by(title="Public Gallery Video").first()
+    assert public_video_obj is not None
+    assert public_video_obj.is_public is True
+    expected_public_src = f'/videos/stream/{public_video_obj.id}'
+    assert f'<source src="{expected_public_src}" type="video/mp4">' in content
+
+
+def test_my_videos_shows_visibility_and_toggle_button(client, db, app):
+    """Test /my-videos shows visibility status and toggle button for owner."""
+    # 1. Create and log in user
+    signup_resp = client.post('/auth/signup', json={"username": "visibility_user", "email": "visibility@example.com", "password": "password"})
+    assert signup_resp.status_code == 201
+    jwt_login_resp = client.post('/auth/login', json={'identifier': 'visibility_user', 'password': 'password'})
+    jwt_token = jwt_login_resp.get_json()['access_token']
+    form_login_resp = client.post('/auth/login', data={'identifier': 'visibility_user', 'password': 'password'}, follow_redirects=True)
+    assert form_login_resp.status_code == 200
+
+    # 2. Upload one public and one private video
+    # Public
+    upload_public_resp = client.post('/videos/upload_video', data={
+        'title': "My Public Test Video", 'video': (io.BytesIO(b"public data"), "public_test.mp4"), 'is_public': 'true'
+    }, content_type='multipart/form-data', headers={"Authorization": f"Bearer {jwt_token}"})
+    assert upload_public_resp.status_code == 201
+    public_video_id = upload_public_resp.get_json()['video_id']
+
+    # Private (default)
+    upload_private_resp = client.post('/videos/upload_video', data={
+        'title': "My Default Private Video", 'video': (io.BytesIO(b"private data"), "private_test.mp4")
+    }, content_type='multipart/form-data', headers={"Authorization": f"Bearer {jwt_token}"})
+    assert upload_private_resp.status_code == 201
+    private_video_id = upload_private_resp.get_json()['video_id']
+
+    # 3. Access /my-videos
+    response = client.get('/my-videos')
+    assert response.status_code == 200
+    content = response.data.decode()
+
+    # Title strings
+    public_title = "My Public Test Video"
+    private_title = "My Default Private Video"
+
+    # Find the starting index of each video's block by its title
+    idx_public_video = content.find(f"<h3>{public_title}</h3>")
+    idx_private_video = content.find(f"<h3>{private_title}</h3>")
+
+    assert idx_public_video != -1, f"'{public_title}' not found in content"
+    assert idx_private_video != -1, f"'{private_title}' not found in content"
+
+    # Define a reasonable end for each block (e.g., start of the next item or end of list)
+    # This is still a bit fragile if structure changes drastically.
+    # For simplicity, we'll check for status and button within a certain range after title.
+
+    # Check Public Video ("My Public Test Video")
+    start_search_public = idx_public_video
+    # Find where its list item might end, e.g., before the next <li> or end of </ul>
+    end_search_public_li = content.find("</li>", start_search_public)
+    public_video_block = content[start_search_public : end_search_public_li if end_search_public_li != -1 else len(content)]
+
+    assert "<p><strong>Status:</strong> Public</p>" in public_video_block
+    assert f'<form method="POST" action="/videos/{public_video_id}/toggle-visibility"' in public_video_block
+    assert "Make Private</button>" in public_video_block
+    assert "Make Public</button>" not in public_video_block # Important negative check
+
+    # Check Private Video ("My Default Private Video")
+    start_search_private = idx_private_video
+    end_search_private_li = content.find("</li>", start_search_private)
+    private_video_block = content[start_search_private : end_search_private_li if end_search_private_li != -1 else len(content)]
+
+    assert "<p><strong>Status:</strong> Private</p>" in private_video_block
+    assert f'<form method="POST" action="/videos/{private_video_id}/toggle-visibility"' in private_video_block
+    assert "Make Public</button>" in private_video_block
+    assert "Make Private</button>" not in private_video_block # Important negative check
+
+
+def test_toggle_visibility_from_my_videos_page(client, db, app):
+    """Test toggling visibility via the button on /my-videos page and see update."""
+    # 1. Create user, log in (form and JWT)
+    signup_resp = client.post('/auth/signup', json={"username": "toggler_user", "email": "toggler@example.com", "password": "password"})
+    assert signup_resp.status_code == 201
+    jwt_login_resp = client.post('/auth/login', json={'identifier': 'toggler_user', 'password': 'password'})
+    jwt_token = jwt_login_resp.get_json()['access_token']
+    form_login_resp = client.post('/auth/login', data={'identifier': 'toggler_user', 'password': 'password'}, follow_redirects=True)
+    assert form_login_resp.status_code == 200
+
+    # 2. Upload a video (will be private by default)
+    upload_resp = client.post('/videos/upload_video', data={
+        'title': "Toggle Me Video", 'video': (io.BytesIO(b"toggle me data"), "toggle_me.mp4")
+    }, content_type='multipart/form-data', headers={"Authorization": f"Bearer {jwt_token}"})
+    assert upload_resp.status_code == 201
+    video_id = upload_resp.get_json()['video_id']
+
+    # 3. Access /my-videos, verify it's private
+    response_before_toggle = client.get('/my-videos')
+    content_before = response_before_toggle.data.decode()
+
+    video_title_str = "Toggle Me Video"
+    idx_video_before = content_before.find(f"<h3>{video_title_str}</h3>")
+    assert idx_video_before != -1, f"Title '{video_title_str}' not found in content_before"
+    # Ensure we are looking within the correct list item
+    end_idx_li_before = content_before.find("</li>", idx_video_before)
+    block_before = content_before[idx_video_before : end_idx_li_before if end_idx_li_before != -1 else len(content_before)]
+
+    assert "<p><strong>Status:</strong> Private</p>" in block_before
+    assert "Make Public</button>" in block_before
+
+    # 4. Click the "Make Public" button (POST to toggle-visibility)
+    toggle_response = client.post(f'/videos/{video_id}/toggle-visibility', follow_redirects=True)
+    assert toggle_response.status_code == 200
+    assert toggle_response.request.path == '/my-videos' # Should redirect back
+    content_after_toggle = toggle_response.data.decode()
+    assert b"visibility updated to Public" in toggle_response.data # Flash message
+
+    idx_video_after = content_after_toggle.find(f"<h3>{video_title_str}</h3>")
+    assert idx_video_after != -1, f"Title '{video_title_str}' not found in content_after_toggle"
+    end_idx_li_after = content_after_toggle.find("</li>", idx_video_after)
+    block_after = content_after_toggle[idx_video_after : end_idx_li_after if end_idx_li_after != -1 else len(content_after_toggle)]
+
+    assert "<p><strong>Status:</strong> Public</p>" in block_after
+    assert "Make Private</button>" in block_after
+
+    # 5. Toggle it back to Private
+    toggle_back_response = client.post(f'/videos/{video_id}/toggle-visibility', follow_redirects=True)
+    assert toggle_back_response.status_code == 200
+    content_final = toggle_back_response.data.decode()
+    assert b"visibility updated to Private" in toggle_back_response.data # Flash message
+
+    idx_video_final = content_final.find(f"<h3>{video_title_str}</h3>")
+    assert idx_video_final != -1, f"Title '{video_title_str}' not found in content_final"
+    end_idx_li_final = content_final.find("</li>", idx_video_final)
+    block_final = content_final[idx_video_final : end_idx_li_final if end_idx_li_final != -1 else len(content_final)]
+
+    assert "<p><strong>Status:</strong> Private</p>" in block_final
+    assert "Make Public</button>" in block_final

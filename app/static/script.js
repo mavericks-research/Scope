@@ -22,6 +22,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const formData = new FormData(videoForm);
+            // Ensure 'is_public' is included; FormData only includes checked checkboxes by default
+            const isPublicCheckbox = videoForm.querySelector('input[name="is_public"]');
+            if (isPublicCheckbox) {
+                formData.set('is_public', isPublicCheckbox.checked ? 'true' : 'false');
+            }
+
             const submitButton = videoForm.querySelector('button[type="submit"]');
             submitButton.disabled = true;
             submitButton.textContent = 'Uploading...';

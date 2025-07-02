@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - Mavericks Stream</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .video-list {
+            list-style: none;
+            padding: 0;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        .video-item {
+            background-color: #fff;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .video-item h3 {
+            margin-top: 0;
+            font-size: 1.2em;
+        }
+        .video-item p {
+            font-size: 0.9em;
+            color: #555;
+            margin-bottom: 5px;
+        }
+        .video-item .uploader-info {
+            font-size: 0.8em;
+            color: #777;
+            margin-bottom: 10px;
+        }
+        .no-videos {
+            text-align: center;
+            color: #777;
+            margin-top: 20px;
+            grid-column: 1 / -1; /* Span across all columns if grid is active */
+        }
+        nav ul {
+            list-style-type: none;
+            padding: 0;
+            margin-bottom: 20px;
+            background-color: #f8f9fa; /* Light grey background */
+            overflow: hidden;
+            border-bottom: 1px solid #ddd;
+        }
+        nav ul li {
+            float: left;
+        }
+        nav ul li a {
+            display: block;
+            color: #007bff; /* Blue links */
+            text-align: center;
+            padding: 14px 16px;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        nav ul li a:hover {
+            background-color: #e9ecef; /* Slightly darker on hover */
+            color: #0056b3;
+        }
+        /* Clear floats */
+        nav ul::after {
+            content: "";
+            clear: both;
+            display: table;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        video {
+            max-width: 100%;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <nav>
+            <ul>
+                <li><a href="{{ url_for('frontend.index') }}">Home (Upload)</a></li>
+                <li><a href="{{ url_for('frontend.public_gallery') }}">Public Gallery</a></li>
+                {% if current_user.is_authenticated %}
+                    <li><a href="{{ url_for('frontend.my_videos') }}">My Videos</a></li>
+                    <li><a href="{{ url_for('auth.logout') }}">Logout</a></li>
+                {% else %}
+                    <li><a href="{{ url_for('auth.login') }}">Login</a></li>
+                    <li><a href="{{ url_for('auth.signup') }}">Sign Up</a></li>
+                {% endif %}
+            </ul>
+        </nav>
+
+        <h1>{{ title }}</h1>
+
+        {% if videos %}
+            <ul class="video-list">
+                {% for video in videos %}
+                    <li class="video-item">
+                        <h3>{{ video.title }}</h3>
+                        <p><strong>Description:</strong> {{ video.description or 'No description provided.' }}</p>
+                        <p class="uploader-info">Uploaded by: {{ video.uploader.username }} on {{ video.created_at.strftime('%Y-%m-%d') }}</p>
+                        <div>
+                            <video width="320" height="240" controls preload="metadata">
+                                <source src="{{ url_for('videos.stream_video', video_id=video.id) }}" type="video/mp4">
+                                <!-- Consider adding more source types if you support them -->
+                                Your browser does not support the video tag.
+                            </video>
+                        </div>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="no-videos">No public videos available at the moment. Check back later!</p>
+        {% endif %}
+    </div>
+</body>
+</html>

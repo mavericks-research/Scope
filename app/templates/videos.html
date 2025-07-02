@@ -56,12 +56,23 @@
         <nav>
             <ul>
                 <li><a href="{{ url_for('frontend.index') }}">Home (Upload)</a></li>
+                <li><a href="{{ url_for('frontend.public_gallery') }}">Public Gallery</a></li>
                 <li><a href="{{ url_for('frontend.my_videos') }}">My Videos</a></li>
                 <li><a href="{{ url_for('auth.logout') }}">Logout</a></li>
             </ul>
         </nav>
 
         <h1>My Uploaded Videos</h1>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flashed-messages" style="list-style: none; padding: 0;">
+                {% for category, message in messages %}
+                    <li class="message {{ category }}" style="background-color: #e7f3fe; border: 1px solid #d0e3f0; color: #31708f; padding: 10px; margin-bottom: 10px; border-radius: 4px;">{{ message }}</li>
+                {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
 
         {% if videos %}
             <ul class="video-list">
@@ -71,13 +82,16 @@
                         <p><strong>Description:</strong> {{ video.description or 'No description provided.' }}</p>
                         <p><strong>Filename:</strong> {{ video.filename }}</p>
                         <p><strong>Uploaded:</strong> {{ video.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+                        <p><strong>Status:</strong> {{ "Public" if video.is_public else "Private" }}</p>
                         <div>
-                            <video width="320" height="240" controls>
+                            <video width="320" height="240" controls preload="metadata">
                                 <source src="{{ url_for('videos.stream_video', video_id=video.id) }}" type="video/mp4">
-                                <!-- You can add more <source> tags for different video formats if available -->
                                 Your browser does not support the video tag.
                             </video>
                         </div>
+                        <form method="POST" action="{{ url_for('videos.toggle_video_visibility', video_id=video.id) }}" style="margin-top: 10px;">
+                            <button type="submit">{{ "Make Private" if video.is_public else "Make Public" }}</button>
+                        </form>
                     </li>
                 {% endfor %}
             </ul>

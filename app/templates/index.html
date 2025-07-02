@@ -34,6 +34,7 @@
         <nav>
             <ul>
                 <li><a href="{{ url_for('frontend.index') }}">Home (Upload)</a></li>
+                <li><a href="{{ url_for('frontend.public_gallery') }}">Public Gallery</a></li>
                 <li><a href="{{ url_for('frontend.my_videos') }}">My Videos</a></li>
                 <li><a href="{{ url_for('auth.logout') }}">Logout</a></li>
             </ul>
@@ -64,6 +65,10 @@
         <div>
             <label for="video">Choose video:</label>
             <input type="file" id="video" name="video" accept="video/*" required>
+        </div>
+        <div>
+            <input type="checkbox" id="is_public" name="is_public" value="true">
+            <label for="is_public">Make video public</label>
         </div>
         <button type="submit">Upload</button>
     </form>
