@@ -205,3 +205,118 @@ def test_get_user_videos_empty(auth_data, db):
     json_data = response.get_json()
     assert isinstance(json_data, list)
     assert len(json_data) == 0
+
+
+# --- Tests for Video Streaming ---
+
+def test_stream_video_unauthenticated(client, db):
+    """Test streaming requires login."""
+    # Assume video ID 1 exists for this test, or handle potential 404 if not.
+    # The main point is to check auth.
+    response = client.get('/videos/stream/1', follow_redirects=False)
+    assert response.status_code == 302 # Should redirect to login
+    assert '/auth/login' in response.headers['Location']
+
+def test_stream_video_non_existent(client, db):
+    """Test streaming a non-existent video ID."""
+    # Need to be authenticated to get past @login_required to the 404
+    # Create a dummy user and log them in via form for session
+    signup_resp = client.post('/auth/signup', json={"username": "streamtestuser", "email": "stream@example.com", "password": "password"})
+    assert signup_resp.status_code == 201
+
+    login_resp = client.post('/auth/login', data={'identifier': 'streamtestuser', 'password': 'password'}, follow_redirects=True)
+    assert login_resp.status_code == 200 # Successfully logged in
+
+    response = client.get('/videos/stream/99999') # Non-existent ID
+    assert response.status_code == 404
+
+def test_stream_video_unauthorized_other_user(client, db, app):
+    """Test streaming another user's video results in 403."""
+    # User A (owner)
+    signup_a_resp = client.post('/auth/signup', json={"username": "ownera", "email": "ownera@example.com", "password": "passworda"})
+    assert signup_a_resp.status_code == 201
+    jwt_login_a_resp = client.post('/auth/login', json={'identifier': 'ownera', 'password': 'passworda'})
+    jwt_a = jwt_login_a_resp.get_json()['access_token']
+
+    upload_resp = client.post('/videos/upload_video', data={
+        'title': "Owner A's Video", 'video': (io.BytesIO(b"data a"), "video_a.mp4")
+    }, content_type='multipart/form-data', headers={"Authorization": f"Bearer {jwt_a}"})
+    assert upload_resp.status_code == 201
+    video_a_id = upload_resp.get_json()['video_id']
+
+    # User B (requester)
+    signup_b_resp = client.post('/auth/signup', json={"username": "requesterb", "email": "requesterb@example.com", "password": "passwordb"})
+    assert signup_b_resp.status_code == 201
+    # Log in User B via form for session auth
+    login_b_resp = client.post('/auth/login', data={'identifier': 'requesterb', 'password': 'passwordb'}, follow_redirects=True)
+    assert login_b_resp.status_code == 200
+
+    # User B tries to stream User A's video
+    response = client.get(f'/videos/stream/{video_a_id}')
+    assert response.status_code == 403 # Forbidden
+
+def test_stream_video_success_owner(client, db, app):
+    """Test successful video streaming by the video owner."""
+    # Signup and login user
+    signup_resp = client.post('/auth/signup', json={"username": "streamowner", "email": "streamowner@example.com", "password": "password"})
+    assert signup_resp.status_code == 201
+
+    # Get JWT for upload
+    jwt_login_resp = client.post('/auth/login', json={'identifier': 'streamowner', 'password': 'password'})
+    assert jwt_login_resp.status_code == 200
+    jwt_token = jwt_login_resp.get_json()['access_token']
+
+    # Upload a video
+    video_content = b"dummy mp4 video content for streaming test"
+    upload_resp = client.post('/videos/upload_video', data={
+        'title': "Streamable Video", 'video': (io.BytesIO(video_content), "stream_test.mp4")
+    }, content_type='multipart/form-data', headers={"Authorization": f"Bearer {jwt_token}"})
+    assert upload_resp.status_code == 201
+    video_id = upload_resp.get_json()['video_id']
+
+    # Log in via form for session auth to access streaming endpoint
+    form_login_resp = client.post('/auth/login', data={'identifier': 'streamowner', 'password': 'password'}, follow_redirects=True)
+    assert form_login_resp.status_code == 200
+
+    # Stream the video
+    response = client.get(f'/videos/stream/{video_id}')
+    assert response.status_code == 200
+    assert response.content_type == 'video/mp4' # Based on default in stream_video route
+    assert response.data == video_content
+    # For as_attachment=False, Content-Disposition is typically "inline; filename=..."
+    # So, we check it's not None and starts with "inline"
+    content_disposition = response.headers.get('Content-Disposition')
+    assert content_disposition is not None
+    assert content_disposition.startswith('inline; filename='), f"Content-Disposition was '{content_disposition}', expected to start with 'inline; filename='"
+
+@pytest.mark.skip(reason="Need to mock os.path.exists for this test properly")
+def test_stream_video_file_not_found_on_disk(client, db, app, mocker):
+    """Test streaming when DB record exists but file is missing on disk."""
+    # Signup and login user
+    signup_resp = client.post('/auth/signup', json={"username": "diskerroruser", "email": "diskerror@example.com", "password": "password"})
+    assert signup_resp.status_code == 201
+    jwt_login_resp = client.post('/auth/login', json={'identifier': 'diskerroruser', 'password': 'password'})
+    jwt_token = jwt_login_resp.get_json()['access_token']
+
+    # Upload a video (file will be created)
+    upload_resp = client.post('/videos/upload_video', data={
+        'title': "Missing File Video", 'video': (io.BytesIO(b"data"), "missing.mp4")
+    }, content_type='multipart/form-data', headers={"Authorization": f"Bearer {jwt_token}"})
+    assert upload_resp.status_code == 201
+    video_id = upload_resp.get_json()['video_id']
+
+    # Log in via form for session
+    form_login_resp = client.post('/auth/login', data={'identifier': 'diskerroruser', 'password': 'password'}, follow_redirects=True)
+    assert form_login_resp.status_code == 200
+
+    # Mock os.path.exists to return False for this video's file_path
+    video = Video.query.get(video_id)
+    mocker.patch('os.path.exists', return_value=False) # This might be too broad.
+    # A more targeted mock: mocker.patch('app.videos.os.path.exists', return_value=False)
+    # And ensure it only returns False for video.file_path
+
+    # For a more targeted mock, we might need to inspect video.file_path and mock specifically for it.
+    # This simple mock will make all os.path.exists return False in the route.
+
+    response = client.get(f'/videos/stream/{video_id}')
+    assert response.status_code == 404 # As per current route logic

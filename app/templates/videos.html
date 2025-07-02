@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Videos - Mavericks Stream</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .video-list {
+            list-style: none;
+            padding: 0;
+        }
+        .video-item {
+            background-color: #fff;
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+        }
+        .video-item h3 {
+            margin-top: 0;
+        }
+        .video-item p {
+            font-size: 0.9em;
+            color: #555;
+        }
+        .no-videos {
+            text-align: center;
+            color: #777;
+            margin-top: 20px;
+        }
+        nav ul {
+            list-style-type: none;
+            padding: 0;
+            margin-bottom: 20px;
+            background-color: #eee;
+            overflow: hidden;
+        }
+        nav ul li {
+            float: left;
+        }
+        nav ul li a {
+            display: block;
+            color: #333;
+            text-align: center;
+            padding: 14px 16px;
+            text-decoration: none;
+        }
+        nav ul li a:hover {
+            background-color: #ddd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <nav>
+            <ul>
+                <li><a href="{{ url_for('frontend.index') }}">Home (Upload)</a></li>
+                <li><a href="{{ url_for('frontend.my_videos') }}">My Videos</a></li>
+                <li><a href="{{ url_for('auth.logout') }}">Logout</a></li>
+            </ul>
+        </nav>
+
+        <h1>My Uploaded Videos</h1>
+
+        {% if videos %}
+            <ul class="video-list">
+                {% for video in videos %}
+                    <li class="video-item">
+                        <h3>{{ video.title }}</h3>
+                        <p><strong>Description:</strong> {{ video.description or 'No description provided.' }}</p>
+                        <p><strong>Filename:</strong> {{ video.filename }}</p>
+                        <p><strong>Uploaded:</strong> {{ video.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+                        <div>
+                            <video width="320" height="240" controls>
+                                <source src="{{ url_for('videos.stream_video', video_id=video.id) }}" type="video/mp4">
+                                <!-- You can add more <source> tags for different video formats if available -->
+                                Your browser does not support the video tag.
+                            </video>
+                        </div>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="no-videos">You haven't uploaded any videos yet.</p>
+        {% endif %}
+    </div>
+</body>
+</html>

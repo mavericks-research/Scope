@@ -5,12 +5,54 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mavericks Stream</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        /* Basic Nav styling - can be moved to style.css */
+        nav ul {
+            list-style-type: none;
+            padding: 0;
+            margin-bottom: 20px;
+            background-color: #eee;
+            overflow: hidden;
+        }
+        nav ul li {
+            float: left;
+        }
+        nav ul li a {
+            display: block;
+            color: #333;
+            text-align: center;
+            padding: 14px 16px;
+            text-decoration: none;
+        }
+        nav ul li a:hover {
+            background-color: #ddd;
+        }
+    </style>
 </head>
 <body>
-    <h1>Welcome to Mavericks Stream!</h1>
+    <div class="container"> <!-- Added container for consistency -->
+        <nav>
+            <ul>
+                <li><a href="{{ url_for('frontend.index') }}">Home (Upload)</a></li>
+                <li><a href="{{ url_for('frontend.my_videos') }}">My Videos</a></li>
+                <li><a href="{{ url_for('auth.logout') }}">Logout</a></li>
+            </ul>
+        </nav>
 
-    <h2>Upload Video</h2>
-    <form action="{{ url_for('videos.upload_video') }}" method="post" enctype="multipart/form-data">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flashed-messages">
+                {% for category, message in messages %}
+                    <div class="message {{ category }}">{{ message }}</div>
+                {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <h1>Welcome to Mavericks Stream!</h1>
+
+        <h2>Upload Video</h2>
+    <form action="{{ url_for('videos.upload_video_route') }}" method="post" enctype="multipart/form-data">
         <div>
             <label for="title">Title:</label>
             <input type="text" id="title" name="title" required>
@@ -26,6 +68,19 @@
         <button type="submit">Upload</button>
     </form>
 
+    <script>
+        // Check if an access_token was passed from the server (e.g., in URL after form login)
+        const accessTokenFromServer = "{{ access_token or '' }}"; // Use 'or """' to ensure it's a string
+        if (accessTokenFromServer) {
+            console.log("Access token received from server, storing in localStorage.");
+            localStorage.setItem('access_token', accessTokenFromServer);
+            // Optional: Clean the token from the URL to prevent it from staying in history/bookmarks
+            if (window.history.replaceState) {
+                const cleanURL = window.location.pathname; // Or window.location.href.split('?')[0];
+                window.history.replaceState({ path: cleanURL }, '', cleanURL);
+            }
+        }
+    </script>
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>

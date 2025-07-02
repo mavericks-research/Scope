@@ -325,3 +325,113 @@ def test_expired_token(client, db, app):
 # `assert "Invalid token: Not enough segments" in response.get_json()['msg']` is more precise.
 #
 # I will update these assertions in the generated file.
+
+def test_root_redirects_to_login_and_login_page_loads(client, db):
+    """
+    Test that accessing the root path (/) for an unauthenticated user:
+    1. Redirects to the login page.
+    2. The login page loads successfully (status 200).
+    3. The login page contains expected content.
+    """
+    # 1. Request the root path
+    response_root = client.get('/', follow_redirects=False)
+    assert response_root.status_code == 302  # Check for redirect
+
+    # 2. Check the redirect location
+    # The location header will be like 'http://localhost/auth/login?next=%2F'
+    # We are interested in the path part.
+    redirect_location = response_root.headers['Location']
+    assert '/auth/login?next=%2F' in redirect_location
+
+    # 3. Follow the redirect to the login page
+    response_login_page = client.get(redirect_location) # Or client.get('/auth/login?next=%2F')
+    assert response_login_page.status_code == 200  # Login page should load successfully
+
+    # 4. Check for expected content on the login page
+    login_page_content = response_login_page.data.decode()
+    assert "Login" in login_page_content # From <title> or <h1>
+    assert 'name="identifier"' in login_page_content # Check for identifier input field
+    assert 'name="password"' in login_page_content  # Check for password input field
+    assert 'type="submit"' in login_page_content # Check for submit button
+
+
+# --- Tests for Web (Form-based) Signup ---
+
+def test_get_signup_page(client, db):
+    """Test that the signup page loads correctly."""
+    response = client.get('/auth/signup')
+    assert response.status_code == 200
+    content = response.data.decode()
+    assert "Sign Up" in content
+    assert '<form method="POST" action="/auth/signup">' in content
+    assert 'name="username"' in content
+    assert 'name="email"' in content
+    assert 'name="password"' in content
+
+def test_signup_form_success(client, db):
+    """Test successful user signup via web form."""
+    response = client.post('/auth/signup', data={
+        "username": "webformuser",
+        "email": "webform@example.com",
+        "password": "password123"
+    }, follow_redirects=True) # Follow redirect to see flashed message on login page
+
+    assert response.status_code == 200 # Should redirect to login page which is 200
+    content = response.data.decode()
+    assert "Account created successfully! Please log in." in content # Check for success flash message
+    assert "Login" in content # Should be on the login page
+
+    user = User.query.filter_by(email="webform@example.com").first()
+    assert user is not None
+    assert user.username == "webformuser"
+
+def test_signup_form_duplicate_username(client, db):
+    """Test signup via web form with a username that already exists."""
+    # Create an initial user (can be via API or form, API is simpler for setup)
+    client.post('/auth/signup', json={
+        "username": "existingwebuser",
+        "email": "existingweb@example.com",
+        "password": "password123"
+    })
+
+    response = client.post('/auth/signup', data={
+        "username": "existingwebuser", # Duplicate username
+        "email": "anotherweb@example.com",
+        "password": "password456"
+    }, follow_redirects=True)
+
+    assert response.status_code == 200 # Should redirect back to signup page which is 200
+    content = response.data.decode()
+    assert "Username or email already exists" in content # Check for error flash message
+    assert "Sign Up" in content # Should be back on the signup page
+
+def test_signup_form_duplicate_email(client, db):
+    """Test signup via web form with an email that already exists."""
+    client.post('/auth/signup', json={
+        "username": "anotherwebuser",
+        "email": "existingemail@example.com",
+        "password": "password123"
+    })
+
+    response = client.post('/auth/signup', data={
+        "username": "yetanotherwebuser",
+        "email": "existingemail@example.com", # Duplicate email
+        "password": "password456"
+    }, follow_redirects=True)
+
+    assert response.status_code == 200
+    content = response.data.decode()
+    assert "Username or email already exists" in content
+    assert "Sign Up" in content
+
+def test_signup_form_missing_fields(client, db):
+    """Test signup via web form with missing fields."""
+    response = client.post('/auth/signup', data={
+        "username": "incompleteuser"
+        # Missing email and password
+    }, follow_redirects=True)
+
+    assert response.status_code == 200
+    content = response.data.decode()
+    assert "Missing username, email, or password" in content
+    assert "Sign Up" in content

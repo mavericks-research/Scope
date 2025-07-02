@@ -1,52 +1,121 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, render_template, redirect, url_for, flash
 from .models import User
 from . import db, jwt
 from werkzeug.security import check_password_hash
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
+from flask_login import login_user, logout_user, current_user # Added for Flask-Login
 
 auth_bp = Blueprint('auth', __name__)
 
-@auth_bp.route('/signup', methods=['POST'])
+@auth_bp.route('/signup', methods=['GET', 'POST']) # Added GET method
 def signup():
-    data = request.get_json()
-    username = data.get('username')
-    email = data.get('email')
-    password = data.get('password')
+    if request.method == 'POST':
+        if request.is_json:
+            data = request.get_json()
+            username = data.get('username')
+            email = data.get('email')
+            password = data.get('password')
+            is_form_submission = False
+        else: # Form submission
+            username = request.form.get('username')
+            email = request.form.get('email')
+            password = request.form.get('password')
+            is_form_submission = True
 
-    if not username or not email or not password:
-        return jsonify({"msg": "Missing username, email, or password"}), 400
+        if not username or not email or not password:
+            if is_form_submission:
+                flash("Missing username, email, or password", 'danger')
+                return redirect(url_for('auth.signup'))
+            return jsonify({"msg": "Missing username, email, or password"}), 400
 
-    if User.query.filter_by(username=username).first() or \
-       User.query.filter_by(email=email).first():
-        return jsonify({"msg": "Username or email already exists"}), 409 # 409 Conflict
+        if User.query.filter_by(username=username).first() or \
+           User.query.filter_by(email=email).first():
+            if is_form_submission:
+                flash("Username or email already exists", 'danger')
+                return redirect(url_for('auth.signup'))
+            return jsonify({"msg": "Username or email already exists"}), 409 # 409 Conflict
 
-    new_user = User(username=username, email=email, password=password)
-    db.session.add(new_user)
-    db.session.commit()
+        new_user = User(username=username, email=email, password=password)
+        db.session.add(new_user)
+        db.session.commit()
 
-    return jsonify({"msg": "User created successfully"}), 201
+        if is_form_submission:
+            flash("Account created successfully! Please log in.", 'success')
+            return redirect(url_for('auth.login'))
+        return jsonify({"msg": "User created successfully"}), 201
 
-@auth_bp.route('/login', methods=['POST'])
+    # For GET request, render the signup page
+    return render_template('signup.html', title='Sign Up')
+
+@auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
-    data = request.get_json()
-    identifier = data.get('identifier') # Can be username or email
-    password = data.get('password')
+    if request.method == 'POST':
+        if request.is_json: # Handle JSON API login first
+            data = request.get_json()
+            identifier = data.get('identifier')
+            password = data.get('password')
 
-    if not identifier or not password:
-        return jsonify({"msg": "Missing identifier or password"}), 400
+            if not identifier or not password:
+                return jsonify({"msg": "Missing identifier or password"}), 400
 
-    user = User.query.filter((User.username == identifier) | (User.email == identifier)).first()
+            user = User.query.filter((User.username == identifier) | (User.email == identifier)).first()
 
-    if user and user.check_password(password):
-        # The identity should be simple (e.g., user_id) and a string. Store other info in additional_claims.
-        additional_claims = {'username': user.username, 'email': user.email}
-        access_token = create_access_token(identity=str(user.id), additional_claims=additional_claims)
-        return jsonify(access_token=access_token), 200
-    else:
-        return jsonify({"msg": "Bad username, email, or password"}), 401
+            if user and user.check_password(password):
+                # For JWT API login
+                additional_claims = {'username': user.username, 'email': user.email}
+                access_token = create_access_token(identity=str(user.id), additional_claims=additional_claims)
+                # For Flask-Login session (if submitting via form post that also wants a session)
+                # login_user(user) # Consider if session login should happen here too
+                return jsonify(access_token=access_token), 200
+            else:
+                return jsonify({"msg": "Bad username, email, or password"}), 401
+        else: # Handles traditional form submission for Flask-Login
+            if current_user.is_authenticated: # Check for session auth only for form post or GET
+                return redirect(url_for('frontend.index'))
+
+            identifier = request.form.get('identifier')
+            password = request.form.get('password')
+            remember = True if request.form.get('remember') else False
+
+            if not identifier or not password:
+                flash('Missing identifier or password', 'danger')
+                return redirect(url_for('auth.login'))
+
+            user = User.query.filter((User.username == identifier) | (User.email == identifier)).first()
+
+            if user and user.check_password(password):
+                login_user(user, remember=remember)
+                next_page = request.args.get('next')
+                flash('Logged in successfully!', 'success')
+
+                # Generate JWT for client-side JavaScript
+                additional_claims = {'username': user.username, 'email': user.email}
+                access_token = create_access_token(identity=str(user.id), additional_claims=additional_claims)
+
+                # Redirect to the next page (or frontend.index) and pass the token as a query parameter
+                # Note: Passing tokens in URL is not ideal for security. Consider alternatives for production.
+                target_url = next_page or url_for('frontend.index')
+                if '?' in target_url:
+                    return redirect(f"{target_url}&access_token={access_token}")
+                else:
+                    return redirect(f"{target_url}?access_token={access_token}")
+            else:
+                flash('Login Unsuccessful. Please check identifier and password', 'danger')
+                return redirect(url_for('auth.login'))
+
+    # For GET request (which is not request.method == 'POST')
+    if current_user.is_authenticated: # Check for session auth for GET request
+        return redirect(url_for('frontend.index'))
+    return render_template('login.html', title='Login')
+
+@auth_bp.route('/logout')
+def logout():
+    logout_user()
+    flash('You have been logged out.', 'info')
+    return redirect(url_for('auth.login'))
 
 @auth_bp.route('/protected', methods=['GET'])
-@jwt_required()
+@jwt_required() # This protects with JWT
 def protected():
     user_id_str = get_jwt_identity() # This will be str(user.id)
     user = User.query.get(int(user_id_str)) # Convert back to int for query
