@@ -1,7 +1,10 @@
 import os
 import uuid
-from flask import Blueprint, request, jsonify, current_app
+import os
+import uuid
+from flask import Blueprint, request, jsonify, current_app, send_file, abort
 from flask_jwt_extended import jwt_required, get_jwt_identity
+from flask_login import login_required, current_user # Added for session auth
 from werkzeug.utils import secure_filename
 from .models import Video, User
 from . import db
@@ -134,3 +137,34 @@ def get_user_videos():
     videos = Video.query.filter_by(user_id=user_id).order_by(Video.created_at.desc()).all()
 
     return jsonify([format_video_metadata(video) for video in videos]), 200
+
+@videos_bp.route('/stream/<int:video_id>')
+@login_required # Use Flask-Login for session authentication for web page embedding
+def stream_video(video_id):
+    video = Video.query.get_or_404(video_id)
+
+    if video.user_id != current_user.id:
+        # Optional: Allow admins to view any video, or implement more complex sharing logic later
+        # For now, only the owner can stream their own video via this direct stream link.
+        current_app.logger.warning(f"Unauthorized attempt to stream video ID {video_id} by user {current_user.id}. Video owner: {video.user_id}")
+        abort(403) # Forbidden
+
+    if not os.path.exists(video.file_path):
+        current_app.logger.error(f"Video file not found for video ID {video_id} at path {video.file_path}")
+        abort(404) # Or perhaps 500 if this indicates an internal inconsistency
+
+    # Determine mimetype (simple version, can be enhanced)
+    mimetype = 'video/mp4' # Default
+    if '.' in video.filename:
+        ext = video.filename.rsplit('.', 1)[1].lower()
+        if ext == 'webm':
+            mimetype = 'video/webm'
+        elif ext == 'ogv':
+            mimetype = 'video/ogg'
+        # Add other mimetypes as needed
+
+    try:
+        return send_file(video.file_path, mimetype=mimetype, as_attachment=False) # as_attachment=False for embedding
+    except Exception as e:
+        current_app.logger.error(f"Error sending file for video ID {video_id}: {e}")
+        abort(500)

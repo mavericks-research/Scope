@@ -71,16 +71,13 @@
                         <p><strong>Description:</strong> {{ video.description or 'No description provided.' }}</p>
                         <p><strong>Filename:</strong> {{ video.filename }}</p>
                         <p><strong>Uploaded:</strong> {{ video.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
-                        {# Placeholder for actual video link/player.
-                           For now, linking to file_path might not work directly if it's not served.
-                           A dedicated play route would be better.
-                        #}
-                        <p><a href="#">Watch Video (Link not active yet)</a></p>
-                        <!-- Example if files were served directly from a 'uploads' static subfolder:
-                        <p><a href="{{ url_for('static', filename='uploads/' + current_user.id|string + '/' + video.file_path.split('/')[-1] ) }}">Play</a></p>
-                        This is just an example and depends heavily on how files are stored and served.
-                        The current video.file_path is an absolute path on the server.
-                        -->
+                        <div>
+                            <video width="320" height="240" controls>
+                                <source src="{{ url_for('videos.stream_video', video_id=video.id) }}" type="video/mp4">
+                                <!-- You can add more <source> tags for different video formats if available -->
+                                Your browser does not support the video tag.
+                            </video>
+                        </div>
                     </li>
                 {% endfor %}
             </ul>

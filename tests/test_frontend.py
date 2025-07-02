@@ -88,7 +88,23 @@ def test_my_videos_authenticated_with_videos(client, db, app): # Removed auth_da
 
     assert "My Uploaded Videos" in content
     for title in video_titles:
-        assert title in content
+        assert title in content # Check title is present
+        # Also check for the video tag and its src attribute
+        # Need the video ID for this. Let's get it after upload.
+        # This requires modifying the loop or storing video_ids.
+
+    # Re-fetch videos from DB to get their IDs for src check
+    owner_user = User.query.filter_by(email="video_owner@example.com").first()
+    uploaded_videos = Video.query.filter_by(user_id=owner_user.id).all()
+
+    for video_db_obj in uploaded_videos:
+        expected_video_src = f'/videos/stream/{video_db_obj.id}'
+        assert f'<video width="320" height="240" controls>' in content
+        assert f'<source src="{expected_video_src}" type="video/mp4">' in content
+        # Check if the title associated with this video_db_obj is one of the video_titles
+        assert video_db_obj.title in video_titles
+
+
     assert "You haven't uploaded any videos yet." not in content
 
     # Cleanup: Manually remove video files if necessary, though test db should handle records.
@@ -171,5 +187,15 @@ def test_my_videos_isolation(client, db, app): # Removed auth_data
     assert response_a.status_code == 200
     content_a = response_a.data.decode()
     assert "My Uploaded Videos" in content_a
-    assert "User A's Video" in content_a
+    assert "User A's Video" in content_a # Check title
+
+    # Check for video tag for User A's video
+    usera_obj_final = User.query.filter_by(username="usera").first()
+    video_a_final = Video.query.filter_by(user_id=usera_obj_final.id, title="User A's Video").first()
+    assert video_a_final is not None, "User A's video not found in DB at final check"
+
+    expected_video_a_src = f'/videos/stream/{video_a_final.id}'
+    assert f'<video width="320" height="240" controls>' in content_a
+    assert f'<source src="{expected_video_a_src}" type="video/mp4">' in content_a
+
     assert "You haven't uploaded any videos yet." not in content_a
