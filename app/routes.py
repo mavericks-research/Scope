@@ -44,3 +44,10 @@ def public_gallery():
         unlocks = UserVideoUnlock.query.filter_by(user_id=current_user.id).all()
         unlocked_video_ids = {unlock.video_id for unlock in unlocks}
     return render_template('public_gallery.html', videos=public_videos, title="Public Video Gallery", unlocked_video_ids=unlocked_video_ids)
+
+@frontend_bp.route('/profile')
+@login_required
+def user_profile():
+    # Pass current_user to the template, Flask-Login makes it available globally anyway,
+    # but explicit can be clear.
+    return render_template('profile.html', title="My Profile")

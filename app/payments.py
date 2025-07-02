@@ -46,17 +46,127 @@ def create_payment_intent_for_video(video_id):
         return jsonify(error=str(e)), 403 # Or 500 for general server error
 
 # Placeholder for Plaid related routes to be added later
-# @payments_bp.route('/plaid/create_link_token', methods=['POST'])
-# @login_required
-# def create_plaid_link_token():
-#     # ... logic to create and return Plaid link token ...
-#     pass
+import plaid
+from plaid.api import plaid_api
+from plaid.model.link_token_create_request import LinkTokenCreateRequest
+from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
+from plaid.model.products import Products
+from plaid.model.country_code import CountryCode
+import uuid # For mock token generation
 
-# @payments_bp.route('/plaid/exchange_public_token', methods=['POST'])
-# @login_required
-# def exchange_plaid_public_token():
-#     # ... logic to exchange public token and create Stripe bank account token ...
-#     pass
+# ... (other imports)
+
+# Helper to initialize Plaid client (consider moving to a shared utility if used elsewhere)
+def get_plaid_client(app_config):
+    configuration = plaid.Configuration(
+        host=plaid.Environment.Sandbox if app_config['PLAID_ENV'] == 'sandbox' else
+             (plaid.Environment.Development if app_config['PLAID_ENV'] == 'development' else plaid.Environment.Production),
+        api_key={
+            'clientId': app_config['PLAID_CLIENT_ID'],
+            'secret': app_config['PLAID_SECRET_KEY'],
+        }
+    )
+    api_client = plaid.ApiClient(configuration)
+    return plaid_api.PlaidApi(api_client)
+
+@payments_bp.route('/create-link-token', methods=['POST']) # Changed to POST as it's creating a resource
+@login_required
+def create_plaid_link_token():
+    try:
+        plaid_client = get_plaid_client(current_app.config)
+
+        request_body = LinkTokenCreateRequest(
+            client_name="Mavericks Stream", # Replace with your app name
+            language='en',
+            country_codes=[CountryCode(cc) for cc in current_app.config.get('PLAID_COUNTRY_CODES', ['US'])],
+            user=LinkTokenCreateRequestUser(
+                client_user_id=str(current_user.id) # Must be a string
+            ),
+            products=[Products(p) for p in current_app.config.get('PLAID_PRODUCTS', ['auth'])],
+            # redirect_uri='YOUR_REDIRECT_URI', # Optional: for OAuth flows if not using link_customization_name
+            # webhook='YOUR_PLAID_WEBHOOK_URL' # Optional: if you want Plaid webhooks
+        )
+
+        # For now, we will mock the Plaid API call to avoid needing real credentials during this setup phase
+        # In a real scenario:
+        # response = plaid_client.link_token_create(request_body)
+        # link_token = response['link_token']
+
+        # Mocked response:
+        mock_link_token = f"mock_link_token_sandbox_{current_user.id}_{uuid.uuid4().hex[:8]}"
+        current_app.logger.info(f"Mock Plaid Link Token created for user {current_user.id}: {mock_link_token}")
+
+        return jsonify({'link_token': mock_link_token}), 200
+
+    except plaid.ApiException as e:
+        current_app.logger.error(f"Plaid API Exception when creating link token: {e.body}")
+        return jsonify(error={'status_code': e.status, 'message': str(e.body)}), e.status
+    except Exception as e:
+        current_app.logger.error(f"Error creating Plaid link token: {str(e)}")
+        return jsonify(error=str(e)), 500
+
+
+@payments_bp.route('/set-payment-method', methods=['POST'])
+@login_required
+def set_payment_method():
+    data = request.get_json()
+    public_token = data.get('public_token')
+    # metadata = data.get('metadata') # Contains account_id, account name, mask, etc.
+
+    if not public_token:
+        return jsonify(error="Missing public_token"), 400
+
+    try:
+        # In a real scenario:
+        # 1. Initialize Plaid client
+        # plaid_client = get_plaid_client(current_app.config)
+        # 2. Exchange public_token for an access_token
+        # exchange_request = ItemPublicTokenExchangeRequest(public_token=public_token)
+        # exchange_response = plaid_client.item_public_token_exchange(exchange_request)
+        # access_token = exchange_response['access_token']
+        # item_id = exchange_response['item_id'] # Store this if you need to manage the Plaid item later
+
+        # 3. Create a Stripe bank account token using the Plaid access_token and an account_id
+        #    (account_id would come from Link onSuccess metadata)
+        # account_id = metadata['accounts'][0]['id'] if metadata and metadata.get('accounts') else None
+        # if not account_id:
+        #     return jsonify(error="Missing account_id from Plaid metadata"), 400
+        #
+        # processor_token_request = ProcessorStripeBankAccountTokenCreateRequest(
+        # access_token=access_token, account_id=account_id
+        # )
+        # processor_response = plaid_client.processor_stripe_bank_account_token_create(processor_token_request)
+        # stripe_bank_account_token = processor_response['stripe_bank_account_token'] # This is the btok_...
+
+        # For now, MOCKING this entire process:
+        current_app.logger.info(f"Received Plaid public_token for user {current_user.id}: {public_token}")
+        # mock_stripe_source_id = f"btok_test_mock_{uuid.uuid4().hex[:10]}"
+        # Using a common Stripe test card source for easier frontend testing with confirmCardPayment
+        mock_stripe_source_id = "pm_card_visa" # A test payment method ID for Stripe
+        current_app.logger.info(f"Mocking Stripe payment source ID for user {current_user.id}: {mock_stripe_source_id}")
+
+        # Store the mock Stripe source ID on the user
+        user = User.query.get(current_user.id)
+        if not user:
+            return jsonify(error="User not found"), 404 # Should not happen if @login_required works
+
+        user.stripe_payment_source_id = mock_stripe_source_id
+        db.session.commit()
+
+        return jsonify({
+            "status": "success",
+            "message": "Mock payment method set successfully.",
+            "stripe_payment_source_id": mock_stripe_source_id
+            # "plaid_item_id": item_id # If storing
+        }), 200
+
+    # except plaid.ApiException as e:
+    #     current_app.logger.error(f"Plaid API Exception in set_payment_method: {e.body}")
+    #     return jsonify(error={'status_code': e.status, 'message': str(e.body)}), e.status
+    except Exception as e:
+        current_app.logger.error(f"Error in set_payment_method: {str(e)}")
+        db.session.rollback() # Rollback in case of db error during user update
+        return jsonify(error=str(e)), 500
 
 @payments_bp.route('/stripe-webhook', methods=['POST'])
 def stripe_webhook():

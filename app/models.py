@@ -11,6 +11,7 @@ class User(db.Model, UserMixin): # Added UserMixin
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(256), nullable=False) # Increased length for stronger hashes
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    stripe_payment_source_id = db.Column(db.String(100), nullable=True) # For storing Stripe source/customer ID for payments
 
     def __init__(self, username, email, password):
         self.username = username

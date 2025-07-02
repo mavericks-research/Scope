@@ -194,3 +194,68 @@ def test_stripe_webhook_invalid_signature(client, db, app):
 
 # Need to import json for the webhook tests
 import json
+
+
+# --- Tests for Plaid Link Token and Payment Method Setting ---
+
+@pytest.fixture
+def logged_in_client(client, auth_data):
+    """Provides a client that is logged in via Flask-Login session."""
+    _, _, user_info = auth_data # User 'testuser', pass 'password123'
+    # Perform a form login to establish session
+    logout_resp = client.get('/auth/logout', follow_redirects=True) # Clean previous session
+    assert logout_resp.status_code == 200
+    login_resp = client.post('/auth/login', data={
+        'identifier': user_info['username'],
+        'password': 'password123'
+    }, follow_redirects=True)
+    assert login_resp.status_code == 200 # Should be on /upload page
+    return client, user_info # Return client and user_info for convenience
+
+def test_create_link_token_success(logged_in_client, app):
+    client, _ = logged_in_client
+    # Plaid client is mocked in the route for now, so no need to patch plaid.api here yet
+    # unless we want to test specific Plaid client call parameters.
+
+    response = client.post('/payments/create-link-token')
+    assert response.status_code == 200
+    json_data = response.get_json()
+    assert 'link_token' in json_data
+    assert 'mock_link_token_sandbox' in json_data['link_token']
+
+def test_create_link_token_unauthenticated(client):
+    response = client.post('/payments/create-link-token', follow_redirects=False)
+    assert response.status_code == 302 # Redirect to login
+    assert '/auth/login' in response.headers['Location']
+
+def test_set_payment_method_success(logged_in_client, db, app):
+    client, user_info = logged_in_client
+    user_id = user_info['id']
+
+    # Plaid client and token exchange are mocked in the route for now.
+    mock_public_token = "public-sandbox-token-123"
+
+    response = client.post('/payments/set-payment-method', json={
+        'public_token': mock_public_token,
+        'metadata': {'accounts': [{'id': 'mock_account_id'}]} # Some mock metadata
+    })
+
+    assert response.status_code == 200
+    json_data = response.get_json()
+    assert json_data['status'] == 'success'
+    assert json_data['stripe_payment_source_id'] == "pm_card_visa" # The mocked ID
+
+    # Verify user model was updated
+    user = User.query.get(user_id)
+    assert user.stripe_payment_source_id == "pm_card_visa"
+
+def test_set_payment_method_missing_public_token(logged_in_client):
+    client, _ = logged_in_client
+    response = client.post('/payments/set-payment-method', json={}) # Missing public_token
+    assert response.status_code == 400
+    assert "Missing public_token" in response.get_json()['error']
+
+def test_set_payment_method_unauthenticated(client):
+    response = client.post('/payments/set-payment-method', json={'public_token': 'some-token'}, follow_redirects=False)
+    assert response.status_code == 302 # Redirect to login
+    assert '/auth/login' in response.headers['Location']

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - Mavericks Stream</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        /* Basic Nav styling - can be moved to style.css */
+        nav ul {
+            list-style-type: none;
+            padding: 0;
+            margin-bottom: 20px;
+            background-color: #f8f9fa;
+            overflow: hidden;
+            border-bottom: 1px solid #ddd;
+        }
+        nav ul li {
+            float: left;
+        }
+        nav ul li a {
+            display: block;
+            color: #007bff;
+            text-align: center;
+            padding: 14px 16px;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        nav ul li a:hover {
+            background-color: #e9ecef;
+            color: #0056b3;
+        }
+        nav ul::after { content: ""; clear: both; display: table; }
+        .container { max-width: 960px; margin: 0 auto; padding: 20px; }
+        .profile-info p { margin-bottom: 10px; }
+        .profile-info strong { color: #333; }
+        .payment-section { margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; }
+        .payment-section h2 { margin-bottom: 15px; }
+        #add-bank-account-button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1em;
+        }
+        #add-bank-account-button:hover {
+            background-color: #0056b3;
+        }
+        .message { padding:10px; margin-bottom:15px; border-radius:4px; }
+        .message.success { background-color:#d4edda; color:#155724; border:1px solid #c3e6cb; }
+        .message.error { background-color:#f8d7da; color:#721c24; border:1px solid #f5c6cb; }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <nav>
+            <ul>
+                <li><a href="{{ url_for('frontend.home') }}">Home (Gallery)</a></li>
+                {% if current_user.is_authenticated %}
+                    <li><a href="{{ url_for('frontend.upload_page') }}">Upload</a></li>
+                    <li><a href="{{ url_for('frontend.my_videos') }}">My Videos</a></li>
+                    <li><a href="{{ url_for('frontend.user_profile') }}">My Profile</a></li>
+                    <li><a href="{{ url_for('auth.logout') }}">Logout</a></li>
+                {% else %}
+                    <li><a href="{{ url_for('auth.login') }}">Login</a></li>
+                    <li><a href="{{ url_for('auth.signup') }}">Sign Up</a></li>
+                {% endif %}
+            </ul>
+        </nav>
+
+        <h1>{{ title }}</h1>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="message {{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="profile-info">
+            <h2>User Information</h2>
+            <p><strong>Username:</strong> {{ current_user.username }}</p>
+            <p><strong>Email:</strong> {{ current_user.email }}</p>
+            <!-- Add more profile information here as needed -->
+        </div>
+
+        <div class="payment-section">
+            <h2>Payment Methods</h2>
+            <!-- Later, list existing payment methods here -->
+            <p>
+                <button id="add-bank-account-button">Add Bank Account via Plaid</button>
+            </p>
+            <div id="plaid-status"></div> <!-- For Plaid Link messages -->
+        </div>
+
+    </div>
+    <!-- Plaid Link SDK -->
+    <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+    <!-- Your custom script -->
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

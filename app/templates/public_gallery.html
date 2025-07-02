@@ -88,6 +88,7 @@
                 {% if current_user.is_authenticated %}
                     <li><a href="{{ url_for('frontend.upload_page') }}">Upload</a></li>
                     <li><a href="{{ url_for('frontend.my_videos') }}">My Videos</a></li>
+                    <li><a href="{{ url_for('frontend.user_profile') }}">My Profile</a></li>
                     <li><a href="{{ url_for('auth.logout') }}">Logout</a></li>
                 {% else %}
                     <li><a href="{{ url_for('auth.login') }}">Login</a></li>
@@ -141,5 +142,20 @@
             <p class="no-videos">No public videos available at the moment. Check back later!</p>
         {% endif %}
     </div>
+
+    {% if current_user.is_authenticated %}
+    <script>
+        // Make user payment source info available to JS
+        // Using a less common variable name to avoid potential global conflicts.
+        var MAVERICKSTREAM_USER_HAS_PAYMENT_SOURCE = {{ 'true' if current_user.stripe_payment_source_id else 'false' }};
+        var MAVERICKSTREAM_USER_STRIPE_SOURCE_ID = "{{ current_user.stripe_payment_source_id or '' }}";
+    </script>
+    {% else %}
+    <script>
+        var MAVERICKSTREAM_USER_HAS_PAYMENT_SOURCE = false;
+        var MAVERICKSTREAM_USER_STRIPE_SOURCE_ID = "";
+    </script>
+    {% endif %}
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>

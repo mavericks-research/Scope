@@ -507,6 +507,32 @@ def test_public_gallery_shows_video_if_paid_and_owned(client, db, app, auth_data
             os.rmdir(user_upload_folder)
 
 
+def test_profile_page_loads_authenticated(client, auth_data):
+    """Test that the /profile page loads for an authenticated user."""
+    authed_client, _, user_info = auth_data
+
+    # Perform a form login to establish session for Flask-Login protected route
+    login_resp = authed_client.post('/auth/login', data={
+        'identifier': user_info['username'],
+        'password': 'password123' # Password from auth_data fixture
+    }, follow_redirects=True)
+    assert login_resp.status_code == 200
+
+    response = authed_client.get('/profile')
+    assert response.status_code == 200
+    content = response.data.decode()
+    assert f"Username:</strong> {user_info['username']}" in content
+    assert "Add Bank Account via Plaid</button>" in content
+    assert 'id="add-bank-account-button"' in content
+    assert 'src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"' in content
+
+def test_profile_page_redirects_unauthenticated(client):
+    """Test that /profile redirects to login if user is not authenticated."""
+    response = client.get('/profile', follow_redirects=False)
+    assert response.status_code == 302
+    assert '/auth/login?next=%2Fprofile' in response.headers['Location']
+
+
 def test_my_videos_page_shows_set_price(client, db, app, auth_data):
     """Test that 'My Videos' page shows the set price for owned paid videos."""
     client_owner, access_token, owner_info = auth_data
