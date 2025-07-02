@@ -30,7 +30,8 @@ def test_my_videos_authenticated_no_videos(client, db): # Removed auth_data
     }, follow_redirects=True)
 
     assert login_resp.status_code == 200, f"Login failed: {login_resp.data.decode()}"
-    assert login_resp.request.path == '/', f"Not redirected to index after login. Current path: {login_resp.request.path}"
+    # Default redirect after login is now to the upload page
+    assert login_resp.request.path == '/upload', f"Not redirected to /upload after login. Current path: {login_resp.request.path}"
     assert b"Logged in successfully!" in login_resp.data, "Login success flash message not found."
 
     # 3. Access /my-videos

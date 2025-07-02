@@ -34,6 +34,7 @@
             <button type="submit">Sign Up</button>
         </form>
         <p>Already have an account? <a href="{{ url_for('auth.login') }}">Login here</a></p>
+        <p>Or view <a href="{{ url_for('frontend.home') }}">Public Gallery</a></p>
     </div>
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>

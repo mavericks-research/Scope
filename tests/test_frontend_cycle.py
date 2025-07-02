@@ -13,7 +13,7 @@ def test_my_videos_logout_login_cycle(client, db): # Simplified, removed app fix
     # 2. Login User A (form)
     login_resp1 = client.post('/auth/login', data={'identifier': 'cycleuser', 'password': 'password'}, follow_redirects=True)
     assert login_resp1.status_code == 200, f"First form login failed: {login_resp1.data.decode()}"
-    assert login_resp1.request.path == '/', f"Not redirected to index after first login. Path: {login_resp1.request.path}"
+    assert login_resp1.request.path == '/upload', f"Not redirected to /upload after first login. Path: {login_resp1.request.path}"
     assert b"Logged in successfully!" in login_resp1.data, "Success flash for first login not found."
 
     # 3. Get JWT for User A and upload video
@@ -40,7 +40,7 @@ def test_my_videos_logout_login_cycle(client, db): # Simplified, removed app fix
     # 6. Login User A again (form)
     login_resp2 = client.post('/auth/login', data={'identifier': 'cycleuser', 'password': 'password'}, follow_redirects=True)
     assert login_resp2.status_code == 200, f"Second form login failed: {login_resp2.data.decode()}"
-    assert login_resp2.request.path == '/', f"Not redirected to index after second login. Path: {login_resp2.request.path}"
+    assert login_resp2.request.path == '/upload', f"Not redirected to /upload after second login. Path: {login_resp2.request.path}"
     assert b"Logged in successfully!" in login_resp2.data, "Success flash for second login not found."
 
     # 7. Access /my-videos as User A again - SHOULD see video

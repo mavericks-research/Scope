@@ -92,9 +92,9 @@ def login():
                 additional_claims = {'username': user.username, 'email': user.email}
                 access_token = create_access_token(identity=str(user.id), additional_claims=additional_claims)
 
-                # Redirect to the next page (or frontend.index) and pass the token as a query parameter
+                # Redirect to the next page (or frontend.upload_page for a logged-in user)
                 # Note: Passing tokens in URL is not ideal for security. Consider alternatives for production.
-                target_url = next_page or url_for('frontend.index')
+                target_url = next_page or url_for('frontend.upload_page') # Changed default target
                 if '?' in target_url:
                     return redirect(f"{target_url}&access_token={access_token}")
                 else:

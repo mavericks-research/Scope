@@ -84,9 +84,9 @@
     <div class="container">
         <nav>
             <ul>
-                <li><a href="{{ url_for('frontend.index') }}">Home (Upload)</a></li>
-                <li><a href="{{ url_for('frontend.public_gallery') }}">Public Gallery</a></li>
+                <li><a href="{{ url_for('frontend.home') }}">Home (Gallery)</a></li>
                 {% if current_user.is_authenticated %}
+                    <li><a href="{{ url_for('frontend.upload_page') }}">Upload</a></li>
                     <li><a href="{{ url_for('frontend.my_videos') }}">My Videos</a></li>
                     <li><a href="{{ url_for('auth.logout') }}">Logout</a></li>
                 {% else %}

@@ -326,33 +326,42 @@ def test_expired_token(client, db, app):
 #
 # I will update these assertions in the generated file.
 
-def test_root_redirects_to_login_and_login_page_loads(client, db):
+def test_root_serves_gallery_and_protected_route_redirects(client, db):
     """
-    Test that accessing the root path (/) for an unauthenticated user:
-    1. Redirects to the login page.
-    2. The login page loads successfully (status 200).
-    3. The login page contains expected content.
+    Test that for an unauthenticated user:
+    1. Accessing the root path (/) serves the public gallery (200).
+    2. Accessing a protected path (e.g., /upload) redirects to login.
+    3. The login page, when redirected to, loads successfully and contains expected content.
     """
-    # 1. Request the root path
-    response_root = client.get('/', follow_redirects=False)
-    assert response_root.status_code == 302  # Check for redirect
+    # 1. Test root path (/) serves public gallery
+    response_root = client.get('/')
+    assert response_root.status_code == 200
+    root_content = response_root.data.decode()
+    assert "Public Video Gallery" in root_content # Check for gallery title or specific content
+    assert "Login" in root_content # Nav link for non-auth user
+    assert "Sign Up" in root_content # Nav link for non-auth user
 
-    # 2. Check the redirect location
-    # The location header will be like 'http://localhost/auth/login?next=%2F'
-    # We are interested in the path part.
-    redirect_location = response_root.headers['Location']
-    assert '/auth/login?next=%2F' in redirect_location
+    # 2. Test protected route (/upload) redirects to login
+    response_upload_unauthed = client.get('/upload', follow_redirects=False)
+    assert response_upload_unauthed.status_code == 302  # Check for redirect
 
-    # 3. Follow the redirect to the login page
-    response_login_page = client.get(redirect_location) # Or client.get('/auth/login?next=%2F')
+    # 3. Check the redirect location from protected route
+    redirect_location = response_upload_unauthed.headers['Location']
+    # For /upload, next should be /upload. url_for('frontend.upload_page') is '/upload'
+    # werkzeug.urls.url_quote will make /upload become %2Fupload
+    assert '/auth/login?next=%2Fupload' in redirect_location
+
+    # 4. Follow the redirect to the login page
+    response_login_page = client.get(redirect_location)
     assert response_login_page.status_code == 200  # Login page should load successfully
 
-    # 4. Check for expected content on the login page
+    # 5. Check for expected content on the login page
     login_page_content = response_login_page.data.decode()
     assert "Login" in login_page_content # From <title> or <h1>
     assert 'name="identifier"' in login_page_content # Check for identifier input field
     assert 'name="password"' in login_page_content  # Check for password input field
     assert 'type="submit"' in login_page_content # Check for submit button
+    assert 'Or view <a href="/">Public Gallery</a>' in login_page_content # Check link back to gallery
 
 
 # --- Tests for Web (Form-based) Signup ---

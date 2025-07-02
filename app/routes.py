@@ -6,10 +6,16 @@ from app import db # Import db instance if needed for complex queries, not for s
 frontend_bp = Blueprint('frontend', __name__)
 
 @frontend_bp.route('/')
+def home():
+    # Serve public gallery as the main landing page
+    public_videos = Video.query.filter_by(is_public=True).order_by(Video.created_at.desc()).all()
+    return render_template('public_gallery.html', videos=public_videos, title="Welcome - Public Video Gallery")
+
+@frontend_bp.route('/upload') # New route for the upload page
 @login_required
-def index():
+def upload_page(): # Renamed from index to avoid confusion
     access_token = request.args.get('access_token')
-    return render_template('index.html', access_token=access_token)
+    return render_template('index.html', access_token=access_token, title="Upload Video") # Pass title
 
 @frontend_bp.route('/my-videos')
 @login_required
