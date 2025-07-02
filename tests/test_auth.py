@@ -325,3 +325,31 @@ def test_expired_token(client, db, app):
 # `assert "Invalid token: Not enough segments" in response.get_json()['msg']` is more precise.
 #
 # I will update these assertions in the generated file.
+
+def test_root_redirects_to_login_and_login_page_loads(client, db):
+    """
+    Test that accessing the root path (/) for an unauthenticated user:
+    1. Redirects to the login page.
+    2. The login page loads successfully (status 200).
+    3. The login page contains expected content.
+    """
+    # 1. Request the root path
+    response_root = client.get('/', follow_redirects=False)
+    assert response_root.status_code == 302  # Check for redirect
+
+    # 2. Check the redirect location
+    # The location header will be like 'http://localhost/auth/login?next=%2F'
+    # We are interested in the path part.
+    redirect_location = response_root.headers['Location']
+    assert '/auth/login?next=%2F' in redirect_location
+
+    # 3. Follow the redirect to the login page
+    response_login_page = client.get(redirect_location) # Or client.get('/auth/login?next=%2F')
+    assert response_login_page.status_code == 200  # Login page should load successfully
+
+    # 4. Check for expected content on the login page
+    login_page_content = response_login_page.data.decode()
+    assert "Login" in login_page_content # From <title> or <h1>
+    assert 'name="identifier"' in login_page_content # Check for identifier input field
+    assert 'name="password"' in login_page_content  # Check for password input field
+    assert 'type="submit"' in login_page_content # Check for submit button
